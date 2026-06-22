@@ -30,6 +30,19 @@ Directory layout:
 
 ## Installation
 
+### Clone the repository
+
+Large robot mesh/texture files (`*.stl`, `*.obj`, `*.dae`, `*.png`, `*.mtl`) are
+committed directly in this repository. You can clone with plain Git.
+
+```bash
+# Clone with regular Git
+git clone https://github.com/ccrpRepo/robot_retargeter.git
+cd robot_retargeter
+```
+
+### Python environment
+
 Requires Python >= 3.10 (developed on Python 3.11). A virtual environment
 (conda / venv) is recommended.
 
@@ -69,8 +82,7 @@ subject to their own license). To use the SMPL-X pipeline
 > directory is git-ignored and will not be committed.
 
 > Note: Large robot mesh/texture files (`*.stl`, `*.obj`, `*.dae`, `*.png`,
-> `*.mtl`) are tracked with [Git LFS](https://git-lfs.com/). Make sure Git LFS
-> is installed (`git lfs install`) before cloning so the meshes are fetched.
+> `*.mtl`) are stored directly in this repository, so cloning may take longer.
 
 ## Usage
 

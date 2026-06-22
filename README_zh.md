@@ -24,7 +24,17 @@
 | `bash/` | 一键运行的流水线脚本 |
 
 ## 安装
+### 克隆仓库
 
+仓库中的较大机器人 mesh / 纹理文件（`*.stl`、`*.obj`、`*.dae`、`*.png`、`*.mtl`）直接随仓库提交，使用普通 Git 即可克隆。
+
+```bash
+# 使用普通 Git 克隆
+git clone https://github.com/ccrpRepo/robot_retargeter.git
+cd robot_retargeter
+```
+
+### Python 环境
 需要 Python ≥ 3.10（开发环境为 Python 3.11）。建议使用虚拟环境（conda / venv）。
 
 ```bash
@@ -56,11 +66,11 @@ SMPL-X 模型文件**不包含**在本仓库中（受其自身许可协议约束
 
 > 下载即表示你同意 SMPL-X 的许可协议。该目录已被 git 忽略，不会被提交。
 
-> 注意：较大的机器人 mesh / 纹理文件（`*.stl`、`*.obj`、`*.dae`、`*.png`、`*.mtl`）使用 [Git LFS](https://git-lfs.com/) 管理。克隆前请先安装 Git LFS（`git lfs install`），以便正确拉取 mesh 文件。
+> 注意：较大的机器人 mesh / 纹理文件（`*.stl`、`*.obj`、`*.dae`、`*.png`、`*.mtl`）已直接存储在仓库中，因此首次克隆耗时可能更长。
 
 ## 运行
 
-`bash/` 目录提供了两个一键流水线脚本，会自动完成「回放 → 重定向 → 可视化」三步。脚本默认使用当前激活环境中的 `python`，也可用 `PYTHON_BIN` 指定解释器。
+`bash/` 目录提供了两个一键流水线脚本，会自动完成「关键映射点生成 → 重定向 → 可视化」三步。脚本默认使用当前激活环境中的 `python`，也可用 `PYTHON_BIN` 指定解释器。
 
 ### 1) 从 SMPL-X 动作重定向
 
