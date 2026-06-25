@@ -4,7 +4,7 @@ render_debug: False
 keypoints_path: "output_data/keypoints/jaka_pi/Form_1_stageii_keypoints.pkl"
 joints_limit_offset_degrees:
   _knee_joint: [10.0, 0.0]
-  _elbow_joint: [30.0, 0.0]
+  _elbow_joint: [20.0, 0.0]
 knee_angle_offset_degrees: 15.0
 
 robot_links:
@@ -53,11 +53,11 @@ ik_match_table: {
 
   "left_shoulder": ["Left_shoulder_roll_Link", 30, 3],
   "left_arm": ["Left_elbow_Link", 10.0, 3],
-  "left_fore_arm": ["left_hand", 10, 3],
+  "left_fore_arm": ["left_hand", 10, 1],
 
   "right_shoulder": ["Right_shoulder_roll_Link", 30, 3],
   "right_arm": ["Right_elbow_Link", 10.0, 3],
-  "right_fore_arm": ["right_hand", 10, 3]
+  "right_fore_arm": ["right_hand", 10, 1]   
 
 }
 

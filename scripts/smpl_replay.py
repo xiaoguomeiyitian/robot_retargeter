@@ -14,9 +14,9 @@ Usage:
 
 	# Use a specific motion file and playback fps
 	python scripts/smpl_replay.py \
-		--motion_file dataset/ACCAD/Form_1_stageii.npz \
-		--robot-config config/robot/g1.yaml \
-		--fps 120
+		--motion_file dataset/private/test_video_world_params.npz \
+		--robot-config config/robot/agibot_x2.yaml \
+		--fps 30
 """
 
 from __future__ import annotations
@@ -1584,6 +1584,42 @@ def normalize_gender(raw_gender: object, override: str) -> str:
 	return "neutral"
 
 
+def _convert_y_up_to_z_up(
+	trans: np.ndarray, root_orient: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+	"""Rotate a Y-up motion (camera/video world) into the Z-up world MuJoCo uses.
+
+	Some video-derived SMPL-X exports store the world with +Y as the up axis
+	(gravity along -Y). MuJoCo and the rest of this pipeline assume +Z up. We
+	apply a fixed +90 deg rotation about the world X axis to both the root
+	translation and the root orientation so the body stands upright.
+	"""
+	from scipy.spatial.transform import Rotation as _R
+
+	# +90 deg about world X maps world +Y -> +Z.
+	world_fix = _R.from_euler("x", 90.0, degrees=True)
+	fix_mat = world_fix.as_matrix().astype(np.float32)
+
+	trans_z = trans @ fix_mat.T
+	root_rot = _R.from_rotvec(root_orient)
+	root_orient_z = (world_fix * root_rot).as_rotvec().astype(np.float32)
+	return trans_z.astype(np.float32), root_orient_z
+
+
+def _is_y_up(trans: np.ndarray, root_orient: np.ndarray) -> bool:
+	"""Heuristically decide whether the motion is stored Y-up instead of Z-up.
+
+	Checks where the body's local up axis (+Y in SMPL) points in the world for
+	the first frame. If it aligns with world +Y more than world +Z, the motion
+	is Y-up.
+	"""
+	from scipy.spatial.transform import Rotation as _R
+
+	mat = _R.from_rotvec(root_orient[0]).as_matrix()
+	local_up_world = mat[:, 1]  # world direction of body local +Y (up)
+	return abs(local_up_world[1]) > abs(local_up_world[2])
+
+
 def load_motion_arrays(motion_file: Path) -> tuple[dict[str, np.ndarray], str, float]:
 	data = np.load(motion_file, allow_pickle=True)
 
@@ -1606,6 +1642,14 @@ def load_motion_arrays(motion_file: Path) -> tuple[dict[str, np.ndarray], str, f
 		"pose_body": np.asarray(data["pose_body"], dtype=np.float32),
 		"betas": np.asarray(data["betas"], dtype=np.float32).reshape(-1),
 	}
+	# Some video-derived exports are Y-up; the pipeline expects Z-up. Detect and
+	# convert so the character is not lying down ("趴着").
+	if _is_y_up(motion["trans"], motion["root_orient"]):
+		motion["trans"], motion["root_orient"] = _convert_y_up_to_z_up(
+			motion["trans"], motion["root_orient"]
+		)
+		print(f"[load_motion] detected Y-up motion in {motion_file.name}; converted to Z-up.")
+
 	if "pose_hand" in data.files:
 		motion["pose_hand"] = np.asarray(data["pose_hand"], dtype=np.float32)
 	if "pose_jaw" in data.files:
@@ -1739,6 +1783,22 @@ def compute_joint_positions(
 				if pose_eye is not None and pose_eye.shape[1] == 6:
 					model_inputs["leye_pose"] = pose_eye[start:stop, :3]
 					model_inputs["reye_pose"] = pose_eye[start:stop, 3:]
+				# smplx registers default *_pose params with batch size 1; if the motion
+				# file omits them, pass explicit zero tensors so every input shares the
+				# current batch size (otherwise torch.cat inside SMPL-X fails).
+				def _zeros(dim: int) -> torch.Tensor:
+					return torch.zeros(
+						(batch_size, dim), dtype=torch.float32, device=device
+					)
+
+				model_inputs.setdefault("jaw_pose", _zeros(3))
+				model_inputs.setdefault("leye_pose", _zeros(3))
+				model_inputs.setdefault("reye_pose", _zeros(3))
+				left_hand_dim = int(
+					getattr(body_model, "num_pca_comps", 0)
+				) if getattr(body_model, "use_pca", False) else 45
+				model_inputs.setdefault("left_hand_pose", _zeros(left_hand_dim))
+				model_inputs.setdefault("right_hand_pose", _zeros(left_hand_dim))
 			output = body_model(
 				**model_inputs,
 			)

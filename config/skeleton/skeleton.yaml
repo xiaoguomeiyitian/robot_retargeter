@@ -25,5 +25,5 @@ contact_links: [left_foot_end, left_toe,
 
 contact_vel_calculate_window: 6
 contact_vel_threshold: 0.5
-contact_height_threshold: 0.05
+contact_height_threshold: 0.075
 contact_height_lpf_alpha: 0.2
