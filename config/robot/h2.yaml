@@ -8,7 +8,7 @@ joints_limit_offset_degrees:
   knee_joint: [10.0, 0.0]
   elbow_joint: [20.0, 0.0]
 
-# blending offset for knee angle, degrees
+# bending offset for knee angle, degrees
 knee_angle_offset_degrees: 15.0
 
 robot_links:
