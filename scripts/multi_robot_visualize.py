@@ -53,10 +53,18 @@ def get_robot_xml(robot: str) -> str:
 
     The config file is config/robot/<robot>.yaml and robot_xml_path is stored
     relative to the project root.
+
+    If the robot has no config, falls back to 'g1' as a default skeleton.
     """
     config_path = os.path.join(ROBOT_CONFIG_DIR, f"{robot}.yaml")
     if not os.path.isfile(config_path):
-        raise FileNotFoundError(f"Robot config not found: {config_path}")
+        # Fallback: try g1 config for LAFAN1-style subjects without their own config
+        fallback = os.path.join(ROBOT_CONFIG_DIR, "g1.yaml")
+        if os.path.isfile(fallback):
+            print(f"[WARN] No config for '{robot}', falling back to 'g1'")
+            config_path = fallback
+        else:
+            raise FileNotFoundError(f"Robot config not found: {config_path}")
     with open(config_path, "r", encoding="utf-8") as f:
         config = yaml.safe_load(f)
     xml_path = config.get("robot_xml_path")
@@ -215,8 +223,7 @@ def main() -> None:
                 #  "hightorque_hi",
                  
                  ],
-        choices=available_robots(),
-        help="List of robot names to visualize, choices: " + ", ".join(available_robots()),
+        help="List of robot names to visualize, available: " + ", ".join(available_robots()),
     )
     parser.add_argument(
         "--motion_dir",
