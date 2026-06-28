@@ -709,7 +709,7 @@ class RobotRetarget:
 
 if  __name__ == "__main__":
     args = parse_args()
-    workspace_root = os.path.abspath(os.path.join(SCRIPT_DIR,"..", "robot", ".."))
+    workspace_root = os.path.abspath(os.path.join(SCRIPT_DIR, ".."))
     config_path = os.path.expanduser(args.config)
     if not os.path.isabs(config_path):
         config_path = os.path.join(workspace_root, config_path)

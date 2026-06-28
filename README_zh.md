@@ -22,6 +22,7 @@
 | `output_data/` | 输出的关键点与机器人动作 |
 | `scripts/` | Python 流水线脚本 |
 | `bash/` | 一键运行的流水线脚本 |
+| `start.sh` | 交互式启动入口脚本（推荐） |
 
 ## 安装
 ### 克隆仓库
@@ -68,7 +69,26 @@ SMPL-X 模型文件**不包含**在本仓库中（受其自身许可协议约束
 
 下载后解压，将 `.npz` 动作文件放到 `dataset/` 下任意目录（例如 `dataset/ACCAD/`），再通过 `SMPL_MOTION_FILE` 指向对应文件即可。
 
-## 运行
+## 快速开始
+
+`start.sh` 是推荐的交互式入口，提供菜单引导界面，自动处理 Python 环境检测、依赖检查和配置确认。
+
+```bash
+./start.sh              # 交互式启动（菜单选择）
+./start.sh viser        # 直接启动：Viser 浏览器可视化
+./start.sh smpl        # 直接启动：SMPL-X 重定向
+./start.sh doctor       # 环境健康检查
+```
+
+所有模式均支持非交互式命令行参数：
+
+```bash
+./start.sh smpl --motion dataset/ACCAD/Form_1_stageii.npz --robots g1 h2
+./start.sh viser --port 8080
+./start.sh mujoco --motion Form_1_stageii --robots g1 h2 t800
+```
+
+## 流水线脚本
 
 `bash/` 目录提供了两个一键流水线脚本，会自动完成「关键映射点生成 → 重定向 → 可视化」三步。脚本默认使用当前激活环境中的 `python`，也可用 `PYTHON_BIN` 指定解释器。
 
@@ -83,7 +103,7 @@ SMPL-X 模型文件**不包含**在本仓库中（受其自身许可协议约束
 | 变量 | 默认值 | 说明 |
 |---|---|---|
 | `SMPL_MOTION_FILE` | `dataset/ACCAD/Form_1_stageii.npz` | 输入的 SMPL-X 动作文件 |
-| `VIS_ROBOTS` | `g1 h2 t800 r1` | 目标机器人列表（空格分隔，支持多个） |
+| `VIS_ROBOTS` | `g1 h2 DR02 t800` | 目标机器人列表（空格分隔，支持多个） |
 | `KEYPOINTS_NAME` | 由动作文件名自动推导 | 关键点 / 输出动作名称 |
 | `SOURCE_FPS` | `120` | 源动作帧率 |
 | `RENDER_FPS` | `30` | 可视化渲染帧率 |
@@ -109,7 +129,7 @@ SMPL_MOTION_FILE="dataset/ACCAD/Form_1_stageii.npz" \
 |---|---|---|
 | `ROBOT_MOTION_FILE` | `dataset/lafan1_g1/dance1_subject2.csv` | 源机器人动作文件 |
 | `ORIGIN_ROBOT` | `g1` | 源机器人名称（提供骨架配置） |
-| `VIS_ROBOTS` | `h2 r1` | 目标机器人列表（空格分隔，支持多个） |
+| `VIS_ROBOTS` | `g1 h2 t800 hightorque_hi jaka_pi agibot_x2` | 目标机器人列表（空格分隔，支持多个） |
 | `SOURCE_FPS` | `30` | 源动作帧率 |
 | `RENDER_FPS` | `30` | 可视化渲染帧率 |
 | `PYTHON_BIN` | 自动检测 | 指定 Python 解释器 |

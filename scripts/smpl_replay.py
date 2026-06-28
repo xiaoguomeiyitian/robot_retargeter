@@ -1488,14 +1488,14 @@ def update_viewer_keypoints(
 
 	identity_mat = np.eye(3, dtype=np.float32).reshape(-1)
 	scene.ngeom = 0
-	translation_offset = np.array((1.0, 0.0, 0.0), dtype=np.float32)
+	# No offset: keypoints are rendered at their actual positions
 	contact_translation_offset = np.zeros(3, dtype=np.float32)
 	for idx, point in enumerate(keypoints):
 		mujoco.mjv_initGeom(
 			scene.geoms[idx],
 			mujoco.mjtGeom.mjGEOM_SPHERE,
 			np.array([radius, radius, radius], dtype=np.float32),
-			point.astype(np.float32)+np.array(translation_offset, dtype=np.float32),
+			point.astype(np.float32),
 			identity_mat,
 			rgba,
 		)

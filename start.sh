@@ -6,11 +6,11 @@
 # 非交互:   ./start.sh <mode> [args...]
 #
 # 模式:
+#   viser       使用 Viser 浏览器可视化 (空场景启动，浏览器中动态添加机器人)
+#   mujoco      使用 MuJoCo 原生可视化
 #   smpl        从 SMPL-X 动作重定向到机器人 (SMPL-X → 机器人)
 #   robot       从源机器人动作重定向到目标机器人 (机器人 → 机器人)
-#   viser       使用 Viser 浏览器可视化已有动作
-#   mujoco      使用 MuJoCo 原生可视化已有动作
-#   list        列出所有可用机器人
+#   list        列出所有可用机器人和动作
 #   doctor      环境健康检查
 #
 # 用法示例:
@@ -18,8 +18,10 @@
 #   ./start.sh list                                  # 列出可用机器人
 #   ./start.sh smpl                                  # 交互式 SMPL-X 重定向
 #   ./start.sh smpl --motion dataset/ACCAD/Form_1_stageii.npz --robots g1 h2
+#   ./start.sh smpl --robots g1 h2 --robot-motion g1:dataset/ACCAD/Form_1.npz --robot-motion h2:dataset/ACCAD/Form_2.npz
 #   ./start.sh robot --motion dataset/lafan1_g1/dance1_subject2.csv --origin g1 --robots h2 r1
-#   ./start.sh viser --motion Form_1_stageii --robots g1 h2 t800 --port 8080
+#   ./start.sh robot --origin g1 --robots g1 h2 --robot-motion g1:dataset/lafan1_g1/dance1.csv --robot-motion h2:dataset/lafan1_g1/dance2.csv
+#   ./start.sh viser --port 8080                          # 空场景启动，浏览器中动态添加
 #   ./start.sh mujoco --motion Form_1_stageii --robots g1 h2 t800
 #   ./start.sh doctor                                # 环境健康检查
 # ============================================================================
@@ -40,6 +42,12 @@ SOURCE_FPS="30"
 RENDER_FPS="30"
 ORIGIN_ROBOT="g1"
 RENDER_DEBUG="false"
+
+# 每个机器人对应的动作文件 (robot:motion 模式)
+# 在交互模式下由 select_robots_with_motions 填充
+declare -A ROBOT_MOTIONS
+# 每个机器人 key 对应的真实机器人名 (去掉 __N 后缀)
+declare -A ROBOT_REAL_NAMES
 
 # viser 专用
 VISER_PORT="20006"
@@ -85,11 +93,16 @@ log_cmd()   { echo -e "${CYAN}[CMD]${NC}   $1"; }
 detect_python() {
     # 优先使用项目 .venv 中的 Python
     local venv_python="$PROJECT_DIR/.venv/bin/python"
+    # 备选: 同级 trainBot 项目的 venv
+    local trainbot_venv="$(cd "$PROJECT_DIR/../trainBot" 2>/dev/null && pwd)/.venv/bin/python"
     if [[ -n "${PYTHON_BIN:-}" ]]; then
         : # 用户已显式指定
     elif [[ -x "$venv_python" ]]; then
         PYTHON_BIN="$venv_python"
         log_info "使用项目虚拟环境: $PYTHON_BIN"
+    elif [[ -x "$trainbot_venv" ]]; then
+        PYTHON_BIN="$trainbot_venv"
+        log_info "使用 trainBot 虚拟环境: $PYTHON_BIN"
     elif command -v python >/dev/null 2>&1; then
         PYTHON_BIN="$(command -v python)"
     elif command -v python3 >/dev/null 2>&1; then
@@ -284,41 +297,46 @@ show_usage() {
   doctor      环境健康检查
 
 通用参数:
-  --motion <path>          动作文件路径 (.npz 或 .csv)
-  --robots <r1> [r2 ...]   目标机器人列表 (空格分隔)
-  --source-fps <F>         源数据帧率 (默认: 30)
-  --render-fps <F>         渲染帧率 (默认: 30)
+  --motion <path>              动作文件路径 (.npz 或 .csv)
+  --robots <r1> [r2 ...]       目标机器人列表 (空格分隔)
+  --robot-motion <r>:<motion>  为指定机器人设置动作文件 (可多次使用)
+                                示例: --robot-motion g1:dataset/ACCAD/Form_1.npz --robot-motion h2:dataset/ACCAD/Form_2.npz
+  --source-fps <F>             源数据帧率 (默认: 30)
+  --render-fps <F>             渲染帧率 (默认: 30)
 
 smpl 模式:
-  --motion <path>          SMPL-X 动作文件 (.npz，必需)
-  --robots <r1> [r2 ...]    目标机器人列表
+  --motion <path>              SMPL-X 动作文件 (.npz，必需)
+  --robots <r1> [r2 ...]        目标机器人列表
 
 robot 模式:
-  --motion <path>          源机器人动作文件 (.csv，必需)
-  --origin <name>          源机器人名称 (默认: g1)
-  --robots <r1> [r2 ...]    目标机器人列表
+  --motion <path>              源机器人动作文件 (.csv，必需)
+  --origin <name>              源机器人名称 (默认: g1)
+  --robots <r1> [r2 ...]        目标机器人列表
 
 viser 模式:
-  --motion <name>          动作名称 (不含机器人后缀，必需)
-  --robots <r1> [r2 ...]    要显示的机器人列表
-  --port <N>               Viser 端口 (默认: 20006)
-  --loop                   循环播放
-  --no-ground              不显示地面
+  --motion <name>              动作名称 (不含机器人后缀，必需)
+  --robots <r1> [r2 ...]        要显示的机器人列表
+  --port <N>                   Viser 端口 (默认: 20006)
+  --loop                       循环播放
+  --no-ground                   不显示地面
 
 mujoco 模式:
-  --motion <name>          动作名称 (不含机器人后缀，必需)
-  --robots <r1> [r2 ...]    要显示的机器人列表
-  --source-fps <F>         源数据帧率 (默认: 30)
-  --render-fps <F>         渲染帧率 (默认: 60)
-  --loop                   循环播放
+  --motion <name>              动作名称 (不含机器人后缀，必需)
+  --robots <r1> [r2 ...]        要显示的机器人列表
+  --source-fps <F>             源数据帧率 (默认: 30)
+  --render-fps <F>             渲染帧率 (默认: 60)
+  --loop                       循环播放
 
 示例:
   $0 list
   $0 doctor
   $0 smpl
   $0 smpl --motion dataset/ACCAD/Form_1_stageii.npz --robots g1 h2
- motion dataset/lafan1_g1/dance1_subject2.csv --origin g1 --robots h2
+  $0 smpl --robots g1 h2 --robot-motion g1:dataset/ACCAD/Form_1.npz --robot-motion h2:dataset/ACCAD/Form_2.npz
+  $0 robot --motion dataset/lafan1_g1/dance1_subject2.csv --origin g1 --robots h2 r1
+  $0 robot --origin g1 --robots g1 h2 --robot-motion g1:dataset/lafan1_g1/dance1.csv --robot-motion h2:dataset/lafan1_g1/dance2.csv
   $0 viser --motion Form_1_stageii --robots g1 h2 t800 --port 8080
+  $0 viser --robots g1 h2 --robot-motion g1:Form_1 --robot-motion h2:Form_2 --port 8080
 EOF
 }
 
@@ -327,17 +345,17 @@ EOF
 # ══════════════════════════════════════════════════════════════════════════════
 select_mode() {
     local idx=$(prompt_select "请选择启动模式:" \
-        "smpl   — SMPL-X → 机器人 重定向" \
-        "robot  — 机器人 → 机器人 重定向" \
         "viser  — Viser 浏览器可视化" \
         "mujoco — MuJoCo 原生可视化" \
+        "smpl   — SMPL-X → 机器人 重定向" \
+        "robot  — 机器人 → 机器人 重定向" \
         "list   — 列出可用机器人和动作" \
         "doctor — 环境健康检查")
     case $idx in
-        0) MODE="smpl" ;;
-        1) MODE="robot" ;;
-        2) MODE="viser" ;;
-        3) MODE="mujoco" ;;
+        0) MODE="viser" ;;
+        1) MODE="mujoco" ;;
+        2) MODE="smpl" ;;
+        3) MODE="robot" ;;
         4) MODE="list" ;;
         5) MODE="doctor" ;;
     esac
@@ -396,6 +414,133 @@ select_robots_multi() {
     log_info "已选择: ${SELECTED_ROBOTS[*]}"
 }
 
+# ── 交互式选择机器人 + 为每个机器人指定动作 ──────────────────────────────
+# 类似 trainBot 的 config_sim_robots: 先选机器人类型和数量,
+# 再为每个机器人选择动作文件.
+# 填充 SELECTED_ROBOTS 数组和 ROBOT_MOTIONS 关联数组.
+# 参数: $1 = 模式 (smpl|robot|viser|mujoco), 决定动作文件类型
+select_robots_with_motions() {
+    local mode="${1:-smpl}"
+    scan_robots
+    if [ ${#SCAN_ROBOT_ARRAY[@]} -eq 0 ]; then
+        log_error "未找到任何机器人配置"
+        exit 1
+    fi
+
+    local sorted=($(printf '%s\n' "${SCAN_ROBOT_ARRAY[@]}" | sort))
+    SELECTED_ROBOTS=()
+    ROBOT_MOTIONS=()
+    # 用于 viser/mujoco 查找 CSV 的真实机器人名 (去掉 __N 后缀)
+    ROBOT_REAL_NAMES=()
+
+    echo ""
+    log_banner "── 添加机器人 ──"
+
+    while true; do
+        # 显示已添加的机器人
+        if [ ${#SELECTED_ROBOTS[@]} -gt 0 ]; then
+            echo ""
+            log_info "已添加的机器人:"
+            for i in "${!SELECTED_ROBOTS[@]}"; do
+                local r="${SELECTED_ROBOTS[$i]}"
+                local m="${ROBOT_MOTIONS[$r]:-<未指定>}"
+                echo -e "  ${GREEN}$((i+1)))${NC} ${CYAN}${r}${NC}  动作: ${m}"
+            done
+            echo ""
+        fi
+
+        # 选择: 添加机器人 或 完成添加
+        local opts=("${sorted[@]}" "── ✅ 完成添加 ──")
+        local ri
+        ri=$(prompt_select "添加机器人类型 (或完成添加):" "${opts[@]}")
+        if [ "$ri" -ge "${#sorted[@]}" ]; then
+            if [ ${#SELECTED_ROBOTS[@]} -eq 0 ]; then
+                # viser/mujoco mode: allow empty start (add via browser)
+                if [ "$mode" = "viser" ]; then
+                    log_info "跳过选择 — 将通过浏览器添加机器人"
+                    break
+                fi
+                log_warn "至少添加一个机器人"; continue
+            fi
+            break
+        fi
+
+        local rtype="${sorted[$ri]}"
+
+        # 数量
+        local count
+        count=$(prompt_input "  ${rtype} 数量" "1" true)
+        [[ ! "$count" =~ ^[1-9][0-9]*$ ]] && { log_warn "无效, 默认为 1"; count=1; } || true
+
+        # 为每个实例选择动作
+        for n in $(seq 1 "$count"); do
+            local instance_label="${rtype}"
+            [ "$count" -gt 1 ] && instance_label="${rtype} #$n"
+
+            echo ""
+            log_info "为 ${instance_label} 选择动作文件:"
+
+            local motion_path=""
+            case "$mode" in
+                smpl)
+                    # SMPL-X 模式: 选择 .npz 文件
+                    scan_smpl_motions
+                    if [ ${#SCAN_SMPL_MOTION_ARRAY[@]} -gt 0 ]; then
+                        local sorted_motions=($(printf '%s\n' "${SCAN_SMPL_MOTION_ARRAY[@]}" | sort))
+                        local mi
+                        mi=$(prompt_select "  选择 SMPL-X 动作:" "${sorted_motions[@]}")
+                        motion_path="$PROJECT_DIR/dataset/ACCAD/${sorted_motions[$mi]}"
+                        [ ! -f "$motion_path" ] && motion_path="$PROJECT_DIR/dataset/${sorted_motions[$mi]}"
+                        [ ! -f "$motion_path" ] && motion_path="${sorted_motions[$mi]}"
+                    else
+                        motion_path=$(prompt_input "  SMPL-X 动作文件 (.npz 路径)" "" true)
+                    fi
+                    ;;
+                robot)
+                    # 机器人→机器人模式: 选择 .csv 文件
+                    scan_robot_motions
+                    if [ ${#SCAN_ROBOT_MOTION_ARRAY[@]} -gt 0 ]; then
+                        local sorted_motions=($(printf '%s\n' "${SCAN_ROBOT_MOTION_ARRAY[@]}" | sort))
+                        local mi
+                        mi=$(prompt_select "  选择源机器人动作:" "${sorted_motions[@]}")
+                        motion_path="$PROJECT_DIR/${sorted_motions[$mi]}"
+                    else
+                        motion_path=$(prompt_input "  源机器人动作文件 (.csv 路径)" "" true)
+                    fi
+                    ;;
+                viser|mujoco)
+                    # 可视化模式: 选择已有动作名称
+                    scan_motions
+                    if [ ${#SCAN_MOTION_ARRAY[@]} -gt 0 ]; then
+                        local sorted_motions=($(printf '%s\n' "${SCAN_MOTION_ARRAY[@]}" | sort))
+                        # 显示中文名
+                        local display_opts=()
+                        for m in "${sorted_motions[@]}"; do
+                            local cn="${MOTION_LABELS_CN[$m]:-}"
+                            [ -n "$cn" ] && display_opts+=("$m (${cn})") || display_opts+=("$m")
+                        done
+                        local mi
+                        mi=$(prompt_select "  选择动作:" "${display_opts[@]}")
+                        motion_path="${sorted_motions[$mi]}"
+                    else
+                        motion_path=$(prompt_input "  动作名称" "" true)
+                    fi
+                    ;;
+            esac
+
+            # 添加到列表: 始终使用唯一 key (带 __N 后缀避免覆盖)
+            local idx=${#SELECTED_ROBOTS[@]}
+            local robot_key="${rtype}__$((idx+1))"
+            SELECTED_ROBOTS+=("$robot_key")
+            ROBOT_MOTIONS["$robot_key"]="$motion_path"
+            ROBOT_REAL_NAMES["$robot_key"]="$rtype"
+            log_info "已添加: ${instance_label} → ${motion_path}"
+        done
+    done
+
+    log_info "机器人配置完成: ${SELECTED_ROBOTS[*]}"
+}
+
 # ── 扫描可用 SMPL 动作文件 (.npz) ────────────────────────────────────────
 scan_smpl_motions() {
     local motion_dir="$PROJECT_DIR/dataset/ACCAD"
@@ -426,29 +571,8 @@ config_smpl() {
     log_banner "── SMPL-X → 机器人 重定向配置 ──"
     echo ""
 
-    # 动作文件选择
-    scan_smpl_motions
-    if [ ${#SCAN_SMPL_MOTION_ARRAY[@]} -gt 0 ]; then
-        echo -e "${BOLD}选择 SMPL-X 动作文件 (.npz):${NC}"
-        local sorted_motions=($(printf '%s\n' "${SCAN_SMPL_MOTION_ARRAY[@]}" | sort))
-        for i in "${!sorted_motions[@]}"; do
-            echo -e "  ${CYAN}$((i+1))${NC}) ${sorted_motions[$i]}"
-        done
-        echo ""
-        local idx
-        idx=$(prompt_select "动作:" "${sorted_motions[@]}")
-        MOTION_FILE="$PROJECT_DIR/dataset/ACCAD/${sorted_motions[$idx]}"
-        # 如果 ACCAD 目录没有，搜索其他目录
-        [ ! -f "$MOTION_FILE" ] && MOTION_FILE="$PROJECT_DIR/dataset/${sorted_motions[$idx]}"
-        [ ! -f "$MOTION_FILE" ] && MOTION_FILE="${sorted_motions[$idx]}"
-        log_info "已选择动作: $MOTION_FILE"
-    else
-        MOTION_FILE=$(prompt_input "SMPL-X 动作文件 (.npz 完整路径)" "" true)
-    fi
-
-    # 目标机器人
-    echo ""
-    select_robots_multi
+    # 选择机器人 + 为每个机器人指定动作
+    select_robots_with_motions smpl
 
     # 帧率
     echo ""
@@ -479,31 +603,12 @@ config_robot() {
     log_banner "── 机器人 → 机器人 重定向配置 ──"
     echo ""
 
-    # 动作文件选择
-    scan_robot_motions
-    if [ ${#SCAN_ROBOT_MOTION_ARRAY[@]} -gt 0 ]; then
-        echo -e "${BOLD}选择源机器人动作文件 (.csv):${NC}"
-        local sorted_motions=($(printf '%s\n' "${SCAN_ROBOT_MOTION_ARRAY[@]}" | sort))
-        for i in "${!sorted_motions[@]}"; do
-            echo -e "  ${CYAN}$((i+1))${NC}) ${sorted_motions[$i]}"
-        done
-        echo ""
-        local idx
-        idx=$(prompt_select "动作:" "${sorted_motions[@]}")
-        MOTION_FILE="$PROJECT_DIR/${sorted_motions[$idx]}"
-        log_info "已选择动作: $MOTION_FILE"
-    else
-        MOTION_FILE=$(prompt_input "源机器人动作文件 (.csv 完整路径)" "" true)
-    fi
-
     # 源机器人
     echo ""
-    local default_origin="g1"
-    ORIGIN_ROBOT=$(prompt_input "源机器人名称" "$default_origin")
+    ORIGIN_ROBOT=$(prompt_input "源机器人名称" "g1")
 
-    # 目标机器人
-    echo ""
-    select_robots_multi
+    # 选择目标机器人 + 为每个机器人指定动作
+    select_robots_with_motions robot
 
     # 帧率
     echo ""
@@ -589,59 +694,9 @@ config_viser() {
     log_banner "── Viser 浏览器可视化配置 ──"
     echo ""
 
-    # 动作选择
-    scan_motions
-    if [ ${#SCAN_MOTION_ARRAY[@]} -eq 0 ]; then
-        log_warn "未找到任何动作数据，请先运行 smpl/robot 模式生成"
-        echo ""
-        MOTION_FILE=$(prompt_input "或手动输入动作名称" "" true)
-        echo ""
-        select_robots_multi
-    else
-        echo -e "${BOLD}选择要可视化的动作:${NC}"
-        local sorted_motions=($(printf '%s\n' "${SCAN_MOTION_ARRAY[@]}" | sort))
-        for i in "${!sorted_motions[@]}"; do
-            local m="${sorted_motions[$i]}"
-            local cn="${MOTION_LABELS_CN[$m]:-}"
-            local default_robot="${MOTION_ROBOT_MAP[$m]:-}"
-            local display="${m}"
-            [ -n "$cn" ] && display="${m}  ${CYAN}(${cn})${NC}"
-            if [ -n "$default_robot" ]; then
-                echo -e "  ${CYAN}$((i+1))${NC}) ${display}  ${GREEN}(默认机器人: ${default_robot})${NC}"
-            else
-                echo -e "  ${CYAN}$((i+1))${NC}) ${display}"
-            fi
-        done
-        echo ""
-        local idx
-        if ! read -p "请选择 [1-${#sorted_motions[@]}] (默认 1): " idx; then
-            idx=0
-        fi
-        if [ -z "$idx" ]; then idx=0; fi
-        if [[ ! "$idx" =~ ^[0-9]+$ ]] || [ "$idx" -lt 1 ] || [ "$idx" -gt "${#sorted_motions[@]}" ]; then
-            log_warn "无效输入，使用默认 (1)"
-            idx=0
-        fi
-        MOTION_FILE="${sorted_motions[$idx]}"
-        log_info "已选择动作: $MOTION_FILE"
-
-        # 目标机器人 - 自动预选该动作对应的机器人
-        local preselected_robot="${MOTION_ROBOT_MAP[$MOTION_FILE]:-}"
-        echo ""
-        if [ -n "$preselected_robot" ]; then
-            log_info "该动作已有预生成数据，默认机器人: $preselected_robot"
-            if [ "$(prompt_yn "是否只显示该机器人? (否=选择其他)" "y")" = "true" ]; then
-                SELECTED_ROBOTS=("$preselected_robot")
-            else
-                select_robots_multi
-            fi
-        else
-            select_robots_multi
-        fi
-    fi
+    # 机器人和动作通过浏览器 GUI 动态添加，跳过交互式选择
 
     # 端口
-    echo ""
     VISER_PORT=$(prompt_input "Viser 端口" "20006")
 
     # 循环
@@ -661,56 +716,8 @@ config_mujoco() {
     log_banner "── MuJoCo 原生可视化配置 ──"
     echo ""
 
-    # 动作选择 (复用 scan_motions)
-    scan_motions
-    if [ ${#SCAN_MOTION_ARRAY[@]} -eq 0 ]; then
-        log_warn "未找到任何动作数据，请先运行 smpl/robot 模式生成"
-        echo ""
-        MOTION_FILE=$(prompt_input "或手动输入动作名称" "" true)
-        echo ""
-        select_robots_multi
-    else
-        echo -e "${BOLD}选择要可视化的动作:${NC}"
-        local sorted_motions=($(printf '%s\n' "${SCAN_MOTION_ARRAY[@]}" | sort))
-        for i in "${!sorted_motions[@]}"; do
-            local m="${sorted_motions[$i]}"
-            local cn="${MOTION_LABELS_CN[$m]:-}"
-            local default_robot="${MOTION_ROBOT_MAP[$m]:-}"
-            local display="${m}"
-            [ -n "$cn" ] && display="${m}  ${CYAN}(${cn})${NC}"
-            if [ -n "$default_robot" ]; then
-                echo -e "  ${CYAN}$((i+1))${NC}) ${display}  ${GREEN}(默认机器人: ${default_robot})${NC}"
-            else
-                echo -e "  ${CYAN}$((i+1))${NC}) ${display}"
-            fi
-        done
-        echo ""
-        local idx
-        if ! read -p "请选择 [1-${#sorted_motions[@]}] (默认 1): " idx; then
-            idx=0
-        fi
-        if [ -z "$idx" ]; then idx=0; fi
-        if [[ ! "$idx" =~ ^[0-9]+$ ]] || [ "$idx" -lt 1 ] || [ "$idx" -gt "${#sorted_motions[@]}" ]; then
-            log_warn "无效输入，使用默认 (1)"
-            idx=0
-        fi
-        MOTION_FILE="${sorted_motions[$idx]}"
-        log_info "已选择动作: $MOTION_FILE"
-
-        # 目标机器人
-        local preselected_robot="${MOTION_ROBOT_MAP[$MOTION_FILE]:-}"
-        echo ""
-        if [ -n "$preselected_robot" ]; then
-            log_info "该动作已有预生成数据，默认机器人: $preselected_robot"
-            if [ "$(prompt_yn "是否只显示该机器人? (否=选择其他)" "y")" = "true" ]; then
-                SELECTED_ROBOTS=("$preselected_robot")
-            else
-                select_robots_multi
-            fi
-        else
-            select_robots_multi
-        fi
-    fi
+    # 选择机器人 + 为每个机器人指定动作
+    select_robots_with_motions mujoco
 
     # 帧率
     echo ""
@@ -729,12 +736,6 @@ config_mujoco() {
 build_and_run() {
     case "$MODE" in
         smpl)
-            # 检查动作文件
-            if [ ! -f "$MOTION_FILE" ]; then
-                log_error "动作文件不存在: $MOTION_FILE"
-                exit 1
-            fi
-
             local robot_list="${SELECTED_ROBOTS[*]:-$VIS_ROBOTS}"
             local num_robots
             read -r -a robot_arr <<< "$robot_list"
@@ -742,28 +743,34 @@ build_and_run() {
 
             echo ""
             log_banner "══════════════════ SMPL-X → 机器人 ══════════════════"
-            log_info "动作文件: $MOTION_FILE"
             log_info "目标机器人: ${robot_arr[*]}"
             log_info "源帧率: $SOURCE_FPS, 渲染帧率: $RENDER_FPS"
             echo ""
 
             for idx in "${!robot_arr[@]}"; do
                 local robot="${robot_arr[$idx]}"
-                local robot_config="config/robot/${robot}.yaml"
+                local real_name="${ROBOT_REAL_NAMES[$robot]:-$robot}"
+                local robot_config="config/robot/${real_name}.yaml"
+                local this_motion="${ROBOT_MOTIONS[$robot]:-$MOTION_FILE}"
 
                 if [ ! -f "$PROJECT_DIR/$robot_config" ]; then
                     log_error "机器人配置不存在: $robot_config"
                     exit 1
                 fi
+                if [ ! -f "$this_motion" ]; then
+                    log_error "动作文件不存在: $this_motion"
+                    exit 1
+                fi
 
                 echo ""
-                log_info "═══ [机器人 $((idx+1))/${num_robots}] ${robot} ═══"
+                log_info "═══ [机器人 $((idx+1))/${num_robots}] ${real_name} ═══"
+                log_info "  动作: $this_motion"
 
                 # Step 1: smpl_replay
                 echo "[1/3] smpl_replay (提取关键点)"
                 "$PYTHON_BIN" scripts/smpl_replay.py \
                     --no-viewer \
-                    --motion_file "$MOTION_FILE" \
+                    --motion_file "$this_motion" \
                     --robot-config "$robot_config" \
                     --skeleton-config config/skeleton/skeleton.yaml \
                     --fps "$SOURCE_FPS"
@@ -772,7 +779,7 @@ build_and_run() {
                 echo "[2/3] robot_retarget (逆运动学)"
                 local retarget_args=(--config "$robot_config")
                 local keypoints_name
-                keypoints_name="$(basename "${MOTION_FILE}" .npz)"
+                keypoints_name="$(basename "${this_motion}" .npz)"
                 retarget_args+=(--keypoints-name "$keypoints_name")
 
                 if [ "$RENDER_DEBUG" = "true" ]; then
@@ -787,13 +794,23 @@ build_and_run() {
             # Step 3: 可视化
             echo ""
             log_info "[3/3] 可视化"
+            # 使用第一个机器人的动作名作为默认
+            local first_robot="${robot_arr[0]}"
+            local first_motion="${ROBOT_MOTIONS[$first_robot]:-$MOTION_FILE}"
             local motion_name
-            motion_name="$(basename "${MOTION_FILE}" .npz)"
+            motion_name="$(basename "${first_motion}" .npz)"
+
+            # 构建真实机器人名数组
+            local real_robot_arr=()
+            for robot in "${robot_arr[@]}"; do
+                real_robot_arr+=("${ROBOT_REAL_NAMES[$robot]:-$robot}")
+            done
+
             local viser_args=(
                 --motion "$motion_name"
-                --robots "${robot_arr[@]}"
-                --source-fps "$SOURCE_FPS"
-                --render-fps "$RENDER_FPS"
+                --robots "${real_robot_arr[@]}"
+                --source_fps "$SOURCE_FPS"
+                --render_fps "$RENDER_FPS"
                 --port "$VISER_PORT"
             )
             [ "$LOOP" = "true" ] && viser_args+=(--loop)
@@ -805,12 +822,6 @@ build_and_run() {
             ;;
 
         robot)
-            # 检查动作文件
-            if [ ! -f "$MOTION_FILE" ]; then
-                log_error "动作文件不存在: $MOTION_FILE"
-                exit 1
-            fi
-
             local robot_list="${SELECTED_ROBOTS[*]:-$VIS_ROBOTS}"
             local num_robots
             read -r -a robot_arr <<< "$robot_list"
@@ -824,7 +835,6 @@ build_and_run() {
 
             echo ""
             log_banner "══════════════════ 机器人 → 机器人 ══════════════════"
-            log_info "动作文件: $MOTION_FILE"
             log_info "源机器人: $ORIGIN_ROBOT"
             log_info "目标机器人: ${robot_arr[*]}"
             log_info "源帧率: $SOURCE_FPS, 渲染帧率: $RENDER_FPS"
@@ -832,21 +842,28 @@ build_and_run() {
 
             for idx in "${!robot_arr[@]}"; do
                 local robot="${robot_arr[$idx]}"
-                local robot_config="config/robot/${robot}.yaml"
+                local real_name="${ROBOT_REAL_NAMES[$robot]:-$robot}"
+                local robot_config="config/robot/${real_name}.yaml"
+                local this_motion="${ROBOT_MOTIONS[$robot]:-$MOTION_FILE}"
 
                 if [ ! -f "$PROJECT_DIR/$robot_config" ]; then
                     log_error "机器人配置不存在: $robot_config"
                     exit 1
                 fi
+                if [ ! -f "$this_motion" ]; then
+                    log_error "动作文件不存在: $this_motion"
+                    exit 1
+                fi
 
                 echo ""
-                log_info "═══ [机器人 $((idx+1))/${num_robots}] ${robot} ═══"
+                log_info "═══ [机器人 $((idx+1))/${num_robots}] ${real_name} ═══"
+                log_info "  动作: $this_motion"
 
                 # Step 1: robot_replay
                 echo "[1/3] robot_replay (提取关键点)"
                 "$PYTHON_BIN" scripts/robot_replay.py \
                     --no-viewer \
-                    --motion-file "$MOTION_FILE" \
+                    --motion-file "$this_motion" \
                     --source-robot-config "$source_config" \
                     --target-robot-config "$robot_config" \
                     --fps "$SOURCE_FPS"
@@ -855,7 +872,7 @@ build_and_run() {
                 echo "[2/3] robot_retarget (逆运动学)"
                 local retarget_args=(--config "$robot_config")
                 local keypoints_name
-                keypoints_name="$(basename "${MOTION_FILE}" .csv)"
+                keypoints_name="$(basename "${this_motion}" .csv)"
                 retarget_args+=(--keypoints-name "${keypoints_name}_from_${ORIGIN_ROBOT}")
 
                 if [ "$RENDER_DEBUG" = "true" ]; then
@@ -870,13 +887,22 @@ build_and_run() {
             # Step 3: 可视化
             echo ""
             log_info "[3/3] 可视化"
+            local first_robot="${robot_arr[0]}"
+            local first_motion="${ROBOT_MOTIONS[$first_robot]:-$MOTION_FILE}"
             local motion_name
-            motion_name="$(basename "${MOTION_FILE}" .csv)_from_${ORIGIN_ROBOT}"
+            motion_name="$(basename "${first_motion}" .csv)_from_${ORIGIN_ROBOT}"
+
+            # 构建真实机器人名数组
+            local real_robot_arr=()
+            for robot in "${robot_arr[@]}"; do
+                real_robot_arr+=("${ROBOT_REAL_NAMES[$robot]:-$robot}")
+            done
+
             local viser_args=(
                 --motion "$motion_name"
-                --robots "${robot_arr[@]}"
-                --source-fps "$SOURCE_FPS"
-                --render-fps "$RENDER_FPS"
+                --robots "${real_robot_arr[@]}"
+                --source_fps "$SOURCE_FPS"
+                --render_fps "$RENDER_FPS"
                 --port "$VISER_PORT"
             )
             [ "$LOOP" = "true" ] && viser_args+=(--loop)
@@ -888,51 +914,15 @@ build_and_run() {
             ;;
 
         viser)
-            local robot_list="${SELECTED_ROBOTS[*]:-$VIS_ROBOTS}"
-            read -r -a robot_arr <<< "$robot_list"
-
-            # 查找每个机器人的动作 CSV 文件
-            local motion_dir_arg=""
-            local found_all=true
-            for robot in "${robot_arr[@]}"; do
-                local csv_found=""
-                # 1. output_data/robot_motion/
-                if [ -f "$PROJECT_DIR/output_data/robot_motion/${MOTION_FILE}_${robot}.csv" ]; then
-                    csv_found="$PROJECT_DIR/output_data/robot_motion"
-                # 2. dataset/lafan1_g1/
-                elif [ -f "$PROJECT_DIR/dataset/lafan1_g1/${MOTION_FILE}_${robot}.csv" ]; then
-                    csv_found="$PROJECT_DIR/dataset/lafan1_g1"
-                # 3. dataset/bones_g1/
-                elif [ -f "$PROJECT_DIR/dataset/bones_g1/${MOTION_FILE}_${robot}.csv" ]; then
-                    csv_found="$PROJECT_DIR/dataset/bones_g1"
-                fi
-                if [ -z "$csv_found" ]; then
-                    log_warn "未找到 ${MOTION_FILE}_${robot}.csv"
-                    found_all=false
-                else
-                    log_info "找到 ${robot} 动作: ${csv_found}/${MOTION_FILE}_${robot}.csv"
-                    # 使用第一个找到的目录作为 motion_dir
-                    [ -z "$motion_dir_arg" ] && motion_dir_arg="$csv_found"
-                fi
-            done
-
-            if [ "$found_all" = false ]; then
-                log_error "部分机器人动作文件缺失，请先运行 smpl/robot 模式生成"
-                exit 1
-            fi
-
+            # Viser 模式: 启动空场景，通过浏览器 GUI 动态添加机器人和动作
             echo ""
             log_banner "══════════════════ Viser 可视化 ══════════════════"
-            log_info "动作名称: $MOTION_FILE"
-            log_info "机器人: ${robot_arr[*]}"
             log_info "端口: $VISER_PORT"
-            log_info "数据目录: $motion_dir_arg"
+            log_info "启动空场景后，请在浏览器中添加机器人和动作"
             echo ""
 
             local viser_args=(
-                --motion "$MOTION_FILE"
-                --robots "${robot_arr[@]}"
-                --motion_dir "$motion_dir_arg"
+                --data_dirs "$PROJECT_DIR/output_data/robot_motion" "$PROJECT_DIR/dataset/lafan1_g1" "$PROJECT_DIR/dataset/bones_g1" "$PROJECT_DIR/dataset/bones_g1_origin"
                 --port "$VISER_PORT"
             )
             [ "$LOOP" = "true" ] && viser_args+=(--loop)
@@ -945,31 +935,64 @@ build_and_run() {
             local robot_list="${SELECTED_ROBOTS[*]:-$VIS_ROBOTS}"
             read -r -a robot_arr <<< "$robot_list"
 
-            # 查找每个机器人的动作 CSV 文件
-            local motion_dir_arg=""
+            # 查找每个机器人的动作 CSV 文件 (支持多种命名格式)
+            # 并创建临时目录，将 CSV 链接为 Python 脚本期望的 {motion}_{robot}.csv 格式
+            mkdir -p "${PROJECT_DIR}/.tmp"
+            local tmp_motion_dir
+            tmp_motion_dir=$(mktemp -d "${PROJECT_DIR}/.tmp/.tmp_motion_XXXXXX")
             local found_all=true
             for robot in "${robot_arr[@]}"; do
-                local csv_found=""
-                # 1. output_data/robot_motion/
-                if [ -f "$PROJECT_DIR/output_data/robot_motion/${MOTION_FILE}_${robot}.csv" ]; then
-                    csv_found="$PROJECT_DIR/output_data/robot_motion"
-                # 2. dataset/lafan1_g1/
-                elif [ -f "$PROJECT_DIR/dataset/lafan1_g1/${MOTION_FILE}_${robot}.csv" ]; then
-                    csv_found="$PROJECT_DIR/dataset/lafan1_g1"
-                # 3. dataset/bones_g1/
-                elif [ -f "$PROJECT_DIR/dataset/bones_g1/${MOTION_FILE}_${robot}.csv" ]; then
-                    csv_found="$PROJECT_DIR/dataset/bones_g1"
-                fi
-                if [ -z "$csv_found" ]; then
-                    log_warn "未找到 ${MOTION_FILE}_${robot}.csv"
+                local this_motion="${ROBOT_MOTIONS[$robot]:-$MOTION_FILE}"
+                local real_name="${ROBOT_REAL_NAMES[$robot]:-$robot}"
+                local csv_full_path=""
+                _find_csv() {
+                    local dir="$1" motion="$2" rname="$3"
+                    # 格式1: {motion}_{robot}.csv (精确匹配)
+                    [ -f "${dir}/${motion}_${rname}.csv" ] && { echo "${dir}/${motion}_${rname}.csv"; return 0; }
+                    # 格式2: {motion}_subject*.csv (lafan1_g1 格式，要求不含 _from_ 后缀)
+                    local f
+                    for f in "${dir}/${motion}_subject"*.csv; do
+                        [ -f "$f" ] || continue
+                        local base
+                        base="$(basename "$f" .csv)"
+                        [[ "$base" == *"_from_"* ]] && continue
+                        echo "$f"
+                        return 0
+                    done
+                    # 格式3: {motion}_M.csv (bones_g1 格式，隐含 g1)
+                    [ -f "${dir}/${motion}_M.csv" ] && { echo "${dir}/${motion}_M.csv"; return 0; }
+                    # 格式4: {motion}_{robot}_*.csv (如 dance1_subject2_from_g1_h2)
+                    for f in "${dir}/${motion}_${rname}_"*.csv; do
+                        [ -f "$f" ] && { echo "$f"; return 0; }
+                    done
+                    # 格式5: {motion}_M*.csv (bones_g1 通用)
+                    for f in "${dir}/${motion}_M"*.csv; do
+                        [ -f "$f" ] && { echo "$f"; return 0; }
+                    done
+                    return 1
+                }
+                for _dir in "$PROJECT_DIR/output_data/robot_motion" \
+                            "$PROJECT_DIR/dataset/lafan1_g1" \
+                            "$PROJECT_DIR/dataset/bones_g1" \
+                            "$PROJECT_DIR/dataset/bones_g1_origin"; do
+                    [ -d "$_dir" ] || continue
+                    if _result=$(_find_csv "$_dir" "$this_motion" "$real_name"); then
+                        csv_full_path="$_result"
+                        break
+                    fi
+                done
+                if [ -z "$csv_full_path" ]; then
+                    log_warn "未找到 ${this_motion} 对应的 CSV 文件"
                     found_all=false
                 else
-                    log_info "找到 ${robot} 动作: ${csv_found}/${MOTION_FILE}_${robot}.csv"
-                    [ -z "$motion_dir_arg" ] && motion_dir_arg="$csv_found"
+                    log_info "找到 ${real_name} 动作: $(basename "$csv_full_path")"
+                    # Use robot key (with __N suffix) in filename to ensure uniqueness
+                    ln -sf "$csv_full_path" "${tmp_motion_dir}/${this_motion}_${robot}.csv"
                 fi
             done
 
             if [ "$found_all" = false ]; then
+                rm -rf "$tmp_motion_dir"
                 log_error "部分机器人动作文件缺失，请先运行 smpl/robot 模式生成"
                 exit 1
             fi
@@ -979,16 +1002,33 @@ build_and_run() {
             log_info "动作名称: $MOTION_FILE"
             log_info "机器人: ${robot_arr[*]}"
             log_info "源帧率: $SOURCE_FPS, 渲染帧率: $RENDER_FPS"
-            log_info "数据目录: $motion_dir_arg"
             echo ""
 
+            # 传机器人 key (带 __N 后缀) 给 Python 脚本，确保同名机器人有唯一标识
+            local robot_key_arr=()
+            for robot in "${robot_arr[@]}"; do
+                robot_key_arr+=("$robot")
+            done
+
+            # 构建 per-robot motion 参数
+            local robot_motion_args=()
+            local has_custom_motion=false
+            for robot in "${robot_arr[@]}"; do
+                local this_motion="${ROBOT_MOTIONS[$robot]:-}"
+                if [ -n "$this_motion" ] && [ "$this_motion" != "$MOTION_FILE" ]; then
+                    robot_motion_args+=(--robot-motion "${robot}:${this_motion}")
+                    has_custom_motion=true
+                fi
+            done
+
             local mujoco_args=(
-                --motion "$MOTION_FILE"
-                --robots "${robot_arr[@]}"
-                --motion_dir "$motion_dir_arg"
+                --motion "${MOTION_FILE:-${ROBOT_MOTIONS[${robot_arr[0]}]:-}}"
+                --robots "${robot_key_arr[@]}"
+                --motion_dir "$tmp_motion_dir"
                 --source_fps "$SOURCE_FPS"
                 --render_fps "$RENDER_FPS"
             )
+            [ "$has_custom_motion" = "true" ] && mujoco_args+=("${robot_motion_args[@]}")
             [ "$LOOP" = "true" ] && mujoco_args+=(--loop)
 
             exec "$PYTHON_BIN" scripts/multi_robot_visualize.py "${mujoco_args[@]}"
@@ -1084,31 +1124,42 @@ confirm_config() {
     case "$MODE" in
         smpl)
             echo -e "  模式:       ${BOLD}smpl${NC} (SMPL-X → 机器人)"
-            echo -e "  动作文件:   ${BOLD}${MOTION_FILE}${NC}"
-            echo -e "  目标机器人: ${BOLD}${OTS[*]}${NC}"
+            echo -e "  目标机器人: ${BOLD}${SELECTED_ROBOTS[*]}${NC}"
+            echo -e "  机器人动作映射:"
+            for robot in "${SELECTED_ROBOTS[@]:-}"; do
+                local m="${ROBOT_MOTIONS[$robot]:-<未指定>}"
+                echo -e "    ${GREEN}${robot}${NC} → ${m}"
+            done
             echo -e "  帧率:       ${BOLD}源${SOURCE_FPS} / 渲染${RENDER_FPS}${NC}"
             echo -e "  调试渲染:   ${BOLD}${RENDER_DEBUG}${NC}"
             ;;
         robot)
             echo -e "  模式:       ${BOLD}robot${NC} (机器人 → 机器人)"
-            echo -e "  动作文件:   ${BOLD}${MOTION_FILE}${NC}"
             echo -e "  源机器人:   ${BOLD}${ORIGIN_ROBOT}${NC}"
             echo -e "  目标机器人: ${BOLD}${SELECTED_ROBOTS[*]}${NC}"
+            echo -e "  机器人动作映射:"
+            for robot in "${SELECTED_ROBOTS[@]:-}"; do
+                local m="${ROBOT_MOTIONS[$robot]:-<未指定>}"
+                echo -e "    ${GREEN}${robot}${NC} → ${m}"
+            done
             echo -e "  帧率:       ${BOLD}源${SOURCE_FPS} / 渲染${RENDER_FPS}${NC}"
             echo -e "  调试渲染:   ${BOLD}${RENDER_DEBUG}${NC}"
             ;;
         viser)
             echo -e "  模式:       ${BOLD}viser${NC} (浏览器可视化)"
-            echo -e "  动作名称:   ${BOLD}${MOTION_FILE}${NC}"
-            echo -e "  机器人:     ${BOLD}${SELECTED_ROBOTS[*]}${NC}"
+            echo -e "  机器人:     ${BOLD}通过浏览器动态添加${NC}"
             echo -e "  端口:       ${BOLD}${VISER_PORT}${NC}"
             echo -e "  循环:       ${BOLD}${LOOP}${NC}"
             echo -e "  地面:       ${BOLD}$([ "$NO_GROUND" = "true" ] && echo "隐藏" || echo "显示")${NC}"
             ;;
         mujoco)
             echo -e "  模式:       ${BOLD}mujoco${NC} (MuJoCo 原生可视化)"
-            echo -e "  动作名称:   ${BOLD}${MOTION_FILE}${NC}"
             echo -e "  机器人:     ${BOLD}${SELECTED_ROBOTS[*]}${NC}"
+            echo -e "  机器人动作映射:"
+            for robot in "${SELECTED_ROBOTS[@]:-}"; do
+                local m="${ROBOT_MOTIONS[$robot]:-<未指定>}"
+                echo -e "    ${GREEN}${robot}${NC} → ${m}"
+            done
             echo -e "  帧率:       ${BOLD}源${SOURCE_FPS} / 渲染${RENDER_FPS}${NC}"
             echo -e "  循环:       ${BOLD}${LOOP}${NC}"
             ;;
@@ -1169,6 +1220,8 @@ else
     # 解析参数
     VIS_ROBOTS=""
     SELECTED_ROBOTS=()
+    ROBOT_MOTIONS=()
+    MOTION_FILE=""
     while [ $# -gt 0 ]; do
         case "$1" in
             # 通用
@@ -1177,9 +1230,29 @@ else
                 # 支持 --robots g1 h2 t800 或 --robots "g1 h2 t800"
                 shift
                 while [ $# -gt 0 ] && [[ "$1" != --* ]]; do
-                    SELECTED_ROBOTS+=("$1")
+                    # 去重: 避免与 --robot-motion 自动添加的机器人重复
+                    _r_dup=false
+                    for _r_existing in "${SELECTED_ROBOTS[@]:-}"; do
+                        [ "$_r_existing" = "$1" ] && _r_dup=true && break
+                    done
+                    [ "$_r_dup" = false ] && SELECTED_ROBOTS+=("$1")
                     shift
                 done
+                ;;
+            --robot-motion)
+                # 格式: --robot-motion <robot>:<motion_file>
+                # 可多次使用, 为不同机器人指定不同动作
+                # 例如: --robot-motion g1:dataset/ACCAD/Form_1.npz --robot-motion h2:dataset/ACCAD/Form_2.npz
+                rm_spec="$2"; shift 2
+                rm_robot="${rm_spec%%:*}"
+                rm_motion="${rm_spec#*:}"
+                ROBOT_MOTIONS["$rm_robot"]="$rm_motion"
+                # 如果机器人不在 SELECTED_ROBOTS 中, 自动添加
+                found=false
+                for r in "${SELECTED_ROBOTS[@]:-}"; do
+                    [ "$r" = "$rm_robot" ] && found=true && break
+                done
+                [ "$found" = false ] && SELECTED_ROBOTS+=("$rm_robot")
                 ;;
             --source-fps)   SOURCE_FPS="$2"; shift 2 ;;
             --render-fps)   RENDER_FPS="$2"; shift 2 ;;
@@ -1200,24 +1273,62 @@ else
     # 校验必需参数
     case "$MODE" in
         smpl|robot)
+            # 如果没有 --motion, 检查是否所有机器人都有 --robot-motion
             if [ -z "$MOTION_FILE" ]; then
-                log_error "$MODE 模式需要 --motion 参数"
-                show_usage; exit 1
+                if [ ${#ROBOT_MOTIONS[@]} -eq 0 ]; then
+                    log_error "$MODE 模式需要 --motion 参数 或 --robot-motion 参数"
+                    show_usage; exit 1
+                fi
+                # 使用第一个 --robot-motion 作为默认 MOTION_FILE (用于可视化)
+                for robot in "${!ROBOT_MOTIONS[@]}"; do
+                    MOTION_FILE="${ROBOT_MOTIONS[$robot]}"
+                    break
+                done
             fi
             if [ ${#SELECTED_ROBOTS[@]} -eq 0 ]; then
                 log_error "$MODE 模式需要 --robots 参数"
                 show_usage; exit 1
             fi
+            # 为没有 --robot-motion 的机器人填充默认 MOTION_FILE
+            for robot in "${SELECTED_ROBOTS[@]}"; do
+                if [ -z "${ROBOT_MOTIONS[$robot]:-}" ]; then
+                    if [ -n "$MOTION_FILE" ]; then
+                        ROBOT_MOTIONS[$robot]="$MOTION_FILE"
+                    else
+                        log_error "机器人 $robot 没有指定动作 (使用 --robot-motion $robot:<motion>)"
+                        exit 1
+                    fi
+                fi
+            done
             ;;
         viser|mujoco)
+            # 如果没有 --motion, 检查是否所有机器人都有 --robot-motion
             if [ -z "$MOTION_FILE" ]; then
-                log_error "$MODE 模式需要 --motion 参数 (动作名称)"
-                show_usage; exit 1
+                if [ ${#ROBOT_MOTIONS[@]} -eq 0 ]; then
+                    log_error "$MODE 模式需要 --motion 参数 (动作名称) 或 --robot-motion 参数"
+                    show_usage; exit 1
+                fi
+                # 使用第一个 --robot-motion 作为默认 MOTION_FILE
+                for robot in "${!ROBOT_MOTIONS[@]}"; do
+                    MOTION_FILE="${ROBOT_MOTIONS[$robot]}"
+                    break
+                done
             fi
             if [ ${#SELECTED_ROBOTS[@]} -eq 0 ]; then
                 log_error "$MODE 模式需要 --robots 参数"
                 show_usage; exit 1
             fi
+            # 为没有 --robot-motion 的机器人填充默认 MOTION_FILE
+            for robot in "${SELECTED_ROBOTS[@]}"; do
+                if [ -z "${ROBOT_MOTIONS[$robot]:-}" ]; then
+                    if [ -n "$MOTION_FILE" ]; then
+                        ROBOT_MOTIONS[$robot]="$MOTION_FILE"
+                    else
+                        log_error "机器人 $robot 没有指定动作 (使用 --robot-motion $robot:<motion>)"
+                        exit 1
+                    fi
+                fi
+            done
             ;;
     esac
 

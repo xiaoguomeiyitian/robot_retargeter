@@ -6,7 +6,7 @@ and encodes the result to MP4 via ffmpeg.
 Usage:
     python scripts/export_video.py \
         --motion dance2 \
-        --robots subject1 subject3 subject5 \
+        --robots g1 h2 t800 \
         --output output.mp4 \
         --fps 30 \
         --width 1920 \

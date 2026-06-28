@@ -9,7 +9,7 @@ Provides a viser-based GUI for:
 Usage:
     python scripts/motion_editor.py \
         --motion dance2 \
-        --robot subject1 \
+        --robot g1 \
         --motion_dir dataset/lafan1_g1 \
         --port 20007
 """

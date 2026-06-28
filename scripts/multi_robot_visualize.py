@@ -173,6 +173,8 @@ def build_combined_spec(robots: list[str]) -> mujoco.MjSpec:
         pos=[0, 0, 0],
     )
 
+    # Track how many times each robot name has appeared (for dedup)
+    _robot_count: dict[str, int] = {}
     for robot in robots:
         robot_spec = mujoco.MjSpec.from_file(get_robot_xml(robot))
         for j in robot_spec.joints:
@@ -180,7 +182,13 @@ def build_combined_spec(robots: list[str]) -> mujoco.MjSpec:
                 j.name = "floating_base_joint"
                 break
         frame = spec.worldbody.add_frame()
-        spec.attach(robot_spec, prefix=f"{robot}_", frame=frame)
+        # Use unique prefix: robot_1, robot_2, etc. for duplicate robot names
+        _robot_count[robot] = _robot_count.get(robot, 0) + 1
+        if _robot_count[robot] > 1:
+            prefix = f"{robot}_{_robot_count[robot]}_"
+        else:
+            prefix = f"{robot}_"
+        spec.attach(robot_spec, prefix=prefix, frame=frame)
 
     for g in spec.geoms:
         g.contype = 0
@@ -230,6 +238,8 @@ def main() -> None:
         default=MOTION_DIR,
         help="Directory containing motion CSV files",
     )
+    parser.add_argument("--robot-motion", action="append", default=None,
+                        help="Per-robot motion name: <robot>:<motion> (can be used multiple times)")
     parser.add_argument("--source_fps", type=float, default=30.0, help="Source data frame rate (original capture FPS)")
     parser.add_argument(
         "--render_fps",
@@ -242,12 +252,45 @@ def main() -> None:
 
     robots = args.robots
 
+    # Parse per-robot motion mapping
+    robot_motion_map: dict[str, str] = {}
+    if args.robot_motion:
+        for rm in args.robot_motion:
+            parts = rm.split(":", 1)
+            if len(parts) != 2:
+                raise ValueError(f"Invalid --robot-motion format: {rm} (expected <robot>:<motion>)")
+            robot_motion_map[parts[0]] = parts[1]
+
     # Build file paths and load each robot's motion data
     robot_qpos: dict[str, np.ndarray] = {}
     for robot in robots:
-        csv_path = os.path.join(args.motion_dir, f"{args.motion}_{robot}.csv")
-        if not os.path.isfile(csv_path):
-            raise FileNotFoundError(f"Motion file not found: {csv_path}")
+        motion_name = robot_motion_map.get(robot, args.motion)
+        # Build candidate file paths in priority order
+        candidates = []
+        if motion_name:
+            candidates.append(os.path.join(args.motion_dir, f"{motion_name}_{robot}.csv"))
+            candidates.append(os.path.join(args.motion_dir, f"{motion_name}_subject*"))
+            candidates.append(os.path.join(args.motion_dir, f"{motion_name}_M.csv"))
+            candidates.append(os.path.join(args.motion_dir, f"{motion_name}*"))
+        # Fallback: {robot}_*.csv (for temp dir with indexed names)
+        candidates.append(os.path.join(args.motion_dir, f"{robot}_*.csv"))
+        # Last resort: any csv containing robot name
+        candidates.append(os.path.join(args.motion_dir, f"*{robot}*.csv"))
+
+        csv_path = ""
+        import glob
+        for c in candidates:
+            if "*" in c:
+                matches = [f for f in glob.glob(c) if f.endswith(".csv")]
+                if matches:
+                    csv_path = matches[0]
+                    break
+            elif os.path.isfile(c):
+                csv_path = c
+                break
+
+        if not csv_path:
+            raise FileNotFoundError(f"Motion file not found for {robot}")
         robot_qpos[robot] = load_motion(csv_path)
 
     n_frames = min(q.shape[0] for q in robot_qpos.values())

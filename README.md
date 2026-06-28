@@ -22,6 +22,7 @@ Directory layout:
 | `output_data/` | Output keypoints and robot motion |
 | `scripts/` | Python pipeline scripts |
 | `bash/` | One-command pipeline scripts |
+| `start.sh` | Interactive entry script (recommended) |
 
 ## Installation
 
@@ -70,7 +71,26 @@ SMPL-X model files are **not** included in this repository (subject to their own
 
 After downloading, extract and place `.npz` files under any directory in `dataset/` (for example `dataset/ACCAD/`), then point `SMPL_MOTION_FILE` to the desired file.
 
-## Usage
+## Quick Start
+
+`start.sh` is the recommended interactive entry point. It provides a menu-driven interface that guides you through each pipeline stage, handles Python environment detection, dependency checks, and configuration confirmation before execution.
+
+```bash
+./start.sh              # Interactive mode (menu selection)
+./start.sh viser        # Direct launch: Viser browser visualization
+./start.sh smpl        # Direct launch: SMPL-X retargeting
+./start.sh doctor       # Environment health check
+```
+
+Non-interactive mode is also supported for all modes via CLI arguments:
+
+```bash
+./start.sh smpl --motion dataset/ACCAD/Form_1_stageii.npz --robots g1 h2
+./start.sh viser --port 8080
+./start.sh mujoco --motion Form_1_stageii --robots g1 h2 t800
+```
+
+## Pipeline Scripts
 
 The `bash/` directory provides two one-command scripts that run all three stages automatically: keypoint generation -> retargeting -> visualization. By default, scripts use `python` from the currently activated environment. You can also override with `PYTHON_BIN`.
 
@@ -85,7 +105,7 @@ You can customize parameters through environment variables:
 | Variable | Default | Description |
 |---|---|---|
 | `SMPL_MOTION_FILE` | `dataset/ACCAD/Form_1_stageii.npz` | Input SMPL-X motion file |
-| `VIS_ROBOTS` | `g1 h2 t800 r1` | Target robot list (space-separated, multiple allowed) |
+| `VIS_ROBOTS` | `g1 h2 DR02 t800` | Target robot list (space-separated, multiple allowed) |
 | `KEYPOINTS_NAME` | Derived from motion file name | Keypoints / output motion name |
 | `SOURCE_FPS` | `120` | Source motion frame rate |
 | `RENDER_FPS` | `30` | Visualization render frame rate |
@@ -111,7 +131,7 @@ SMPL_MOTION_FILE="dataset/ACCAD/Form_1_stageii.npz" \
 |---|---|---|
 | `ROBOT_MOTION_FILE` | `dataset/lafan1_g1/dance1_subject2.csv` | Source robot motion file |
 | `ORIGIN_ROBOT` | `g1` | Source robot name (provides skeleton config) |
-| `VIS_ROBOTS` | `h2 r1` | Target robot list (space-separated, multiple allowed) |
+| `VIS_ROBOTS` | `g1 h2 t800 hightorque_hi jaka_pi agibot_x2` | Target robot list (space-separated, multiple allowed) |
 | `SOURCE_FPS` | `30` | Source motion frame rate |
 | `RENDER_FPS` | `30` | Visualization render frame rate |
 | `PYTHON_BIN` | Auto-detected | Python interpreter to use |
@@ -330,3 +350,122 @@ In `robot_retarget.py`, for contact-active feet (or configured contact bodies), 
 3. This constraint is added as an extra `FrameTask` in optimization, weighted by `contact_pos_fixed_factor`.
 
 This significantly reduces foot sliding during support phase while preserving motion freedom during swing phase.
+
+## Configuration Reference
+
+### Robot YAML Config (`config/robot/<name>.yaml`)
+
+Each robot has a YAML config file with the following structure:
+
+#### Top-level Fields
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `robot_xml_path` | string | ✅ | Path to robot MJCF file (relative to project root) |
+| `verbose` | bool | ✅ | Enable verbose output |
+| `render_debug` | bool | ✅ | Enable MuJoCo debug viewer |
+| `keypoints_path` | string | ✅ | Path to keypoints `.pkl` file |
+| `joints_limit_offset_degrees` | dict | ✅ | Joint limit offsets `{joint_name: [low_offset, high_offset]}` in degrees |
+| `knee_angle_offset_degrees` | float | ❌ | Knee bending offset in degrees (default: `15.0`) |
+| `robot_links` | dict | ✅ | Link definitions `{link_name: [parent_body, child_body]}` |
+| `contact_links` | list | ✅ | Body names used for contact detection |
+| `ik_match_table` | dict | ✅ | IK target mapping `{keypoint_name: [body_name, weight, solver_config]}` |
+| `key_frame_config` | dict | ✅ | Per-body coordinate frame adjustments |
+
+#### Contact Detection Parameters
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `contact_vel_calculate_window` | int | `6` | Window size for computing contact point speed |
+| `contact_vel_threshold` | float | `0.5` | Speed threshold (m/s) below which a point is considered stationary |
+| `contact_height_threshold` | float | `0.05` | Height threshold (m) below which a point is considered grounded |
+| `contact_height_lpf_alpha` | float | `0.2` | Low-pass filter alpha for ground height smoothing (0-1, smaller = smoother) |
+| `contact_pos_fixed_factor` | float | `15.0` | Weight for contact-locked position constraint in IK |
+
+#### Keypoint Match Table Format
+
+```yaml
+ik_match_table:
+  "hips_mean": ["hips_sphere", 100, 0]        # [body_name, weight, unused]
+  "left_calf": ["left_ankle_roll_link", 30, 3]  # [body_name, weight, task_type]
+```
+
+#### Key Frame Config Format
+
+```yaml
+key_frame_config:
+  hips_mean:
+    offset_deg_xyz: [0.0, 0.0, 0.0]    # Euler angle offset in degrees
+    axis_map_cols:
+      x: [0.0, 0.0, 1.0]               # World X axis in local frame
+      y: [1.0, 0.0, 0.0]               # World Y axis in local frame
+      z: [0.0, 1.0, 0.0]               # World Z axis in local frame
+```
+
+#### Config Inheritance
+
+Configs can inherit from a base config using the `extends` field:
+
+```yaml
+# config/robot/h2.yaml
+extends: g1
+robot_xml_path: "asset/robot/h2_description/H2.xml"
+keypoints_path: "output_data/keypoints/h2/Form_1_stageii_keypoints.pkl"
+# Only override fields that differ from g1
+```
+
+Load inherited configs with:
+```python
+from config_loader import load_robot_config
+config = load_robot_config("config/robot/h2.yaml")
+```
+
+#### Generating New Robot Configs
+
+```bash
+python scripts/generate_robot_config.py \
+    --model asset/robot/new_robot/new_robot.xml \
+    --name new_robot \
+    --output config/robot/new_robot.yaml
+```
+
+#### Validating Configs
+
+```bash
+# Validate all robot configs
+python scripts/validate_configs.py
+
+# Check a specific config's inheritance chain
+python scripts/config_loader.py h2 --chain
+```
+
+### CLI Arguments
+
+#### `robot_retarget.py`
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--config` | `config/robot/h2.yaml` | Robot YAML config path |
+| `--keypoints-name` | None | Override keypoints_path by motion stem name |
+| `--render-debug` | None | Force enable MuJoCo debug viewer |
+| `--no-render-debug` | None | Force disable MuJoCo debug viewer |
+
+#### `smpl_replay.py`
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--motion_file` | `dataset/ACCAD/Form_1_stageii.npz` | Input SMPL-X motion file |
+| `--robot-config` | `config/robot/g1.yaml` | Target robot config |
+| `--skeleton-config` | `config/skeleton/skeleton.yaml` | Skeleton config |
+| `--fps` | `30` | Playback frame rate |
+| `--no-viewer` | False | Run without visualization (headless) |
+
+#### `robot_replay.py`
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--source-robot-config` | `config/robot/g1.yaml` | Source robot config |
+| `--target-robot-config` | `config/robot/h2.yaml` | Target robot config |
+| `--motion-file` | `dataset/lafan1_g1/dance1_subject2.csv` | Source motion CSV |
+| `--fps` | `30` | Playback frame rate |
+| `--no-viewer` | False | Run without visualization |
