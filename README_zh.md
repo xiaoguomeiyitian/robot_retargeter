@@ -25,6 +25,19 @@
 | `start.sh` | 交互式启动入口脚本（推荐） |
 
 ## 安装
+
+### 仓库布局
+
+本项目依赖 `unitree_rl_mjlab` RL 训练和推理。建议将两者放在**同级目录**：
+
+```
+work/unitree/
+├── robot_retargeter/          # 本项目
+└── unitree_rl_mjlab/          # RL 训练框架 (训练 + 推理)
+```
+
+`robot_retargeter` 会自动检测 `../unitree_rl_mjlab` 路径。如果安装在其他位置，可通过 `--rl-root` 参数指定。
+
 ### 克隆仓库
 
 ```bash
@@ -77,6 +90,7 @@ SMPL-X 模型文件**不包含**在本仓库中（受其自身许可协议约束
 ./start.sh              # 交互式启动（菜单选择）
 ./start.sh viser        # 直接启动：Viser 浏览器可视化
 ./start.sh smpl        # 直接启动：SMPL-X 重定向
+./start.sh play        # 直接启动：推理运行训练好的策略
 ./start.sh doctor       # 环境健康检查
 ```
 
@@ -86,7 +100,44 @@ SMPL-X 模型文件**不包含**在本仓库中（受其自身许可协议约束
 ./start.sh smpl --motion dataset/ACCAD/Form_1_stageii.npz --robots g1 h2
 ./start.sh viser --port 8080
 ./start.sh mujoco --motion Form_1_stageii --robots g1 h2 t800
+./start.sh play --checkpoint logs/rsl_rl/Unitree-G1-Flat/run_01/model_500.pt --task Unitree-G1-Flat
+./start.sh play --checkpoint logs/rsl_rl/Unitree-G1-Flat/run_01/model_500.pt --task Unitree-G1-Flat --viewer viser
 ```
+
+### 推理运行 (play 模式)
+
+`play` 模式调用 `unitree_rl_mjlab/scripts/play.py`，加载训练好的策略进行推理：
+
+```bash
+# 交互式选择
+./start.sh play
+
+# 非交互式 (直接指定 checkpoint 和 task)
+./start.sh play \\
+    --checkpoint logs/rsl_rl/Unitree-G1-Flat/run_01/model_500.pt \\
+    --task Unitree-G1-Flat \\
+    --viewer viser
+
+# 使用 GPU 推理
+./start.sh play \\
+    --checkpoint logs/rsl_rl/Unitree-G1-Flat/run_01/model_500.pt \\
+    --task Unitree-G1-Flat \\
+    --device cuda:0 \\
+    --viewer viser
+```
+
+参数说明：
+
+| 参数 | 必需 | 说明 |
+|------|------|------|
+| `--checkpoint` | ✅ | 训练好的 .pt 策略文件路径 |
+| `--task` | ✅ | RL 任务 ID (如 `Unitree-G1-Flat`) |
+| `--viewer` | 否 | 查看器：`auto`/`viser`/`native` (默认 `auto`) |
+| `--device` | 否 | 设备：`cuda:0`/`cpu` (默认自动检测) |
+| `--num-envs` | 否 | 并行环境数 (默认 1) |
+| `--motion-file` | 否 | tracking 任务的 .npz 文件 |
+| `--no-terminations` | 否 | 禁用终止条件 |
+| `--rl-root` | 否 | unitree_rl_mjlab 路径 (默认 `../unitree_rl_mjlab`) |
 
 ## 流水线脚本
 

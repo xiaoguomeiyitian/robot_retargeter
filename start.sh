@@ -10,6 +10,7 @@
 #   mujoco      使用 MuJoCo 原生可视化
 #   smpl        从 SMPL-X 动作重定向到机器人 (SMPL-X → 机器人)
 #   robot       从源机器人动作重定向到目标机器人 (机器人 → 机器人)
+#   play        推理运行训练好的策略 (调用 unitree_rl_mjlab/play.py)
 #   rl          NPZ 导出与 RL 训练流水线 (CSV → NPZ → train)
 #   list        列出所有可用机器人和动作
 #   doctor      环境健康检查
@@ -26,6 +27,8 @@
 #   ./start.sh mujoco --motion Form_1_stageii --robots g1 h2 t800
 #   ./start.sh rl --robot g1 --motion dataset/lafan1_g1/dance1_subject2.csv --rl-task unitree_g1_flat_tracking
 #   ./start.sh rl --robot g1 --motion output_data/robot_motion/Form_1_stageii_g1.csv --export-only
+#   ./start.sh play --checkpoint logs/.../model_500.pt --task Unitree-G1-Flat
+#   ./start.sh play --checkpoint logs/.../model_500.pt --task Unitree-G1-Flat --viewer viser
 #   ./start.sh doctor                                # 环境健康检查
 # ============================================================================
 set -euo pipefail
@@ -367,6 +370,7 @@ show_usage() {
   robot       从源机器人动作重定向到目标机器人
   viser       使用 Viser 浏览器可视化已有动作
   mujoco      使用 MuJoCo 原生可视化已有动作
+  play        推理运行训练好的策略 (调用 unitree_rl_mjlab/play.py)
   rl          NPZ 导出与 RL 训练流水线 (CSV → NPZ → train)
   list        列出可用机器人和动作
   doctor      环境健康检查
@@ -402,6 +406,17 @@ mujoco 模式:
   --render-fps <F>             渲染帧率 (默认: 60)
   --loop                       循环播放
 
+play 模式:
+  --checkpoint <path>           训练好的策略 .pt 文件 (必需)
+  --task <id>                  任务 ID (如 Unitree-G1-Flat, 必需)
+  --motion-file <path>         跟踪任务的 motion 文件 (.npz)
+  --viewer {auto,native,viser} 查看器后端 (默认: auto)
+  --device <dev>               设备 (cuda:0/cpu, 默认自动)
+  --num-envs <N>               环境数 (默认: 1)
+  --rl-root <path>              unitree_rl_mjlab 路径 (默认: ../unitree_rl_mjlab)
+  --no-terminations            禁用终止条件
+  --video                      录制视频
+
 rl 模式:
   --robot <name>               机器人名称 (必需)
   --motion <path>              输入动作文件 (.csv)
@@ -422,6 +437,8 @@ rl 模式:
   $0 robot --origin g1 --robots g1 h2 --robot-motion g1:dataset/lafan1_g1/dance1.csv --robot-motion h2:dataset/lafan1_g1/dance2.csv
   $0 viser --motion Form_1_stageii --robots g1 h2 t800 --port 8080
   $0 viser --robots g1 h2 --robot-motion g1:Form_1 --robot-motion h2:Form_2 --port 8080
+  $0 play --checkpoint logs/rsl_rl/Unitree-G1-Flat/run_01/model_500.pt --task Unitree-G1-Flat
+  $0 play --checkpoint logs/rsl_rl/Unitree-G1-Flat/run_01/model_500.pt --task Unitree-G1-Flat --viewer viser
   $0 rl --robot g1 --motion output_data/robot_motion/Form_1_stageii_g1.csv --rl-task unitree_g1_flat_tracking
   $0 rl --robot g1 --motion output_data/robot_motion/Form_1_stageii_g1.csv --export-only
 EOF
@@ -436,6 +453,7 @@ select_mode() {
         "mujoco — MuJoCo 原生可视化" \
         "smpl   — SMPL-X → 机器人 重定向" \
         "robot  — 机器人 → 机器人 重定向" \
+        "play   — 推理运行训练好的策略" \
         "rl     — NPZ 导出与 RL 训练流水线" \
         "list   — 列出可用机器人和动作" \
         "doctor — 环境健康检查")
@@ -444,7 +462,8 @@ select_mode() {
         1) MODE="mujoco" ;;
         2) MODE="smpl" ;;
         3) MODE="robot" ;;
-        4) MODE="rl" ;;
+        4) MODE="play" ;;
+        5) MODE="rl" ;;
         5) MODE="list" ;;
         6) MODE="doctor" ;;
     esac
@@ -847,6 +866,94 @@ config_mujoco() {
     fi
 }
 
+# ── play 模式交互配置 ───────────────────────────────────────────────────
+config_play() {
+    echo ""
+    log_banner "── 推理运行配置 (play) ──"
+    echo ""
+
+    # RL 根目录
+    RL_ROOT=$(prompt_input "unitree_rl_mjlab 路径" "$PROJECT_DIR/../unitree_rl_mjlab")
+
+    # 任务 ID
+    echo ""
+    log_info "选择任务 ID (常见):"
+    local task_opts=("Unitree-G1-Flat" "Unitree-G1-Rough" "Unitree-G1-23Dof-Flat" "Unitree-G1-Tracking" "Unitree-Go2-Flat" "Unitree-Go2-Rough" "Unitree-H1_2-Flat" "Unitree-H2-Flat" "Unitree-A2-Flat" "Unitree-R1-Flat" "自定义输入")
+    local ti
+    ti=$(prompt_select "任务 ID:" "${task_opts[@]}")
+    if [ "$ti" -eq $(( ${#task_opts[@]} - 1 )) ]; then
+        PLAY_TASK=$(prompt_input "输入任务 ID" "Unitree-G1-Flat" true)
+    else
+        PLAY_TASK="${task_opts[$ti]}"
+    fi
+
+    # Checkpoint
+    echo ""
+    # 尝试自动发现 checkpoint
+    local default_ckpt=""
+    local ckpt_search_dir="$RL_ROOT/logs/rsl_rl/$PLAY_TASK"
+    if [ -d "$ckpt_search_dir" ]; then
+        default_ckpt=$(find "$ckpt_search_dir" -name "model_*.pt" 2>/dev/null | sort -V | tail -1 || echo "")
+    fi
+    if [ -n "$default_ckpt" ]; then
+        log_info "自动发现 checkpoint: $default_ckpt"
+        PLAY_CHECKPOINT=$(prompt_input "Checkpoint 路径" "$default_ckpt")
+    else
+        PLAY_CHECKPOINT=$(prompt_input "Checkpoint 路径 (.pt)" "" true)
+    fi
+
+    # 查看器
+    echo ""
+    local viewer_opts=("auto — 自动检测 (有显示器用 native, 否则 viser)" "viser — Viser 浏览器" "native — MuJoCo 原生窗口")
+    local vi
+    vi=$(prompt_select "查看器后端:" "${viewer_opts[@]}")
+    case $vi in
+        0) PLAY_VIEWER="auto" ;;
+        1) PLAY_VIEWER="viser" ;;
+        2) PLAY_VIEWER="native" ;;
+    esac
+
+    # 设备
+    echo ""
+    if command -v nvidia-smi &>/dev/null && nvidia-smi &>/dev/null; then
+        local gpu_name
+        gpu_name=$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1 | tr -d ' ')
+        log_info "检测到 NVIDIA GPU: $gpu_name"
+        if [ "$(prompt_yn "使用 GPU (cuda:0) 推理?" "y")" = "true" ]; then
+            PLAY_DEVICE="cuda:0"
+        else
+            PLAY_DEVICE="cpu"
+        fi
+    else
+        PLAY_DEVICE="cpu"
+        log_info "未检测到 NVIDIA GPU, 使用 CPU"
+    fi
+
+    # 环境数
+    echo ""
+    PLAY_NUM_ENVS=$(prompt_input "环境数" "1")
+
+    # 跟踪任务的 motion file
+    if [[ "$PLAY_TASK" == *"-Tracking"* ]]; then
+        echo ""
+        log_warn "Tracking 任务需要 motion 文件"
+        local default_motion="$RL_ROOT/src/assets/motions/g1/dance1_subject2.npz"
+        if [ -f "$default_motion" ]; then
+            PLAY_MOTION_FILE=$(prompt_input "Motion 文件" "$default_motion")
+        else
+            PLAY_MOTION_FILE=$(prompt_input "Motion 文件 (.npz)" "" true)
+        fi
+    fi
+
+    # 禁用终止
+    echo ""
+    if [ "$(prompt_yn "禁用终止条件 (避免 episode 提前结束)?" "n")" = "true" ]; then
+        PLAY_NO_TERMINATIONS="true"
+    else
+        PLAY_NO_TERMINATIONS="false"
+    fi
+}
+
 # ── rl 模式交互配置 ───────────────────────────────────────────────────────
 config_rl() {
     echo ""
@@ -1198,6 +1305,62 @@ build_and_run() {
             exec "$PYTHON_BIN" scripts/multi_robot_visualize.py "${mujoco_args[@]}"
             ;;
 
+        play)
+            # 推理运行训练好的策略: 调用 unitree_rl_mjlab/scripts/play.py
+            local play_task="${PLAY_TASK:-}"
+            local play_ckpt="${PLAY_CHECKPOINT:-}"
+            local play_viewer="${PLAY_VIEWER:-auto}"
+            local play_device="${PLAY_DEVICE:-}"
+            local play_num_envs="${PLAY_NUM_ENVS:-1}"
+            local play_motion="${PLAY_MOTION_FILE:-}"
+            local play_no_term="${PLAY_NO_TERMINATIONS:-false}"
+            local play_rl_root="${RL_ROOT:-$PROJECT_DIR/../unitree_rl_mjlab}"
+
+            if [ -z "$play_task" ]; then
+                log_error "play 模式需要 --task 参数"
+                exit 1
+            fi
+            if [ -z "$play_ckpt" ]; then
+                log_error "play 模式需要 --checkpoint 参数"
+                exit 1
+            fi
+            if [ ! -f "$play_ckpt" ]; then
+                log_error "Checkpoint 文件不存在: $play_ckpt"
+                exit 1
+            fi
+
+            local play_script="$play_rl_root/scripts/play.py"
+            if [ ! -f "$play_script" ]; then
+                log_error "play.py 不存在: $play_script (检查 --rl-root)"
+                exit 1
+            fi
+
+            echo ""
+            log_banner "══════════════════ 推理运行 (play) ══════════════════"
+            log_info "任务:       $play_task"
+            log_info "Checkpoint: $play_ckpt"
+            log_info "查看器:     $play_viewer"
+            log_info "设备:       ${play_device:-auto}"
+            log_info "环境数:     $play_num_envs"
+            [ -n "$play_motion" ] && log_info "Motion:     $play_motion"
+            log_info "禁用终止:   $play_no_term"
+            echo ""
+
+            local play_args=(
+                "$play_task"
+                --checkpoint-file "$play_ckpt"
+                --viewer "$play_viewer"
+                --num-envs "$play_num_envs"
+            )
+            [ -n "$play_device" ] && play_args+=(--device "$play_device")
+            [ -n "$play_motion" ] && play_args+=(--motion-file "$play_motion")
+            [ "$play_no_term" = "true" ] && play_args+=(--no-terminations)
+
+            log_info "执行: $PYTHON_BIN $play_script ${play_args[*]}"
+            echo ""
+            exec "$PYTHON_BIN" "$play_script" "${play_args[@]}"
+            ;;
+
         rl)
             # RL 训练流水线: CSV → NPZ → train
             local rl_robot="${RL_ROBOT:-}"
@@ -1381,6 +1544,17 @@ confirm_config() {
             echo -e "  帧率:       ${BOLD}源${SOURCE_FPS} / 渲染${RENDER_FPS}${NC}"
             echo -e "  循环:       ${BOLD}${LOOP}${NC}"
             ;;
+        play)
+            echo -e "  模式:       ${BOLD}play${NC} (推理运行训练策略)"
+            echo -e "  任务:       ${BOLD}${PLAY_TASK:-}${NC}"
+            echo -e "  Checkpoint: ${BOLD}${PLAY_CHECKPOINT:-}${NC}"
+            echo -e "  查看器:     ${BOLD}${PLAY_VIEWER:-auto}${NC}"
+            echo -e "  设备:       ${BOLD}${PLAY_DEVICE:-auto}${NC}"
+            echo -e "  环境数:     ${BOLD}${PLAY_NUM_ENVS:-1}${NC}"
+            [ -n "${PLAY_MOTION_FILE:-}" ] && echo -e "  Motion:     ${BOLD}${PLAY_MOTION_FILE}${NC}"
+            echo -e "  禁用终止:   ${BOLD}${PLAY_NO_TERMINATIONS:-false}${NC}"
+            echo -e "  RL 根目录:  ${BOLD}${RL_ROOT:-}${NC}"
+            ;;
         rl)
             echo -e "  模式:       ${BOLD}rl${NC} (RL 训练流水线)"
             echo -e "  机器人:     ${BOLD}${RL_ROBOT:-}${NC}"
@@ -1425,6 +1599,7 @@ if [ $# -eq 0 ]; then
         robot)   config_robot ;;
         viser)   config_viser ;;
         mujoco)  config_mujoco ;;
+        play)    config_play ;;
         rl)      config_rl ;;
         list)    ;;
         doctor)  ;;
@@ -1443,7 +1618,7 @@ if [ $# -eq 0 ]; then
 else
     # ── 非交互式 ──
     case "${1:-}" in
-        smpl|robot|viser|mujoco|rl|list|doctor) MODE="$1"; shift ;;
+        smpl|robot|viser|mujoco|play|rl|list|doctor) MODE="$1"; shift ;;
         -h|--help|help) show_usage; exit 0 ;;
         *) log_error "未知模式: $1"; show_usage; exit 1 ;;
     esac
@@ -1494,10 +1669,18 @@ else
             --port)         VISER_PORT="$2"; shift 2 ;;
             --loop)         LOOP="true"; shift 1 ;;
             --no-ground)     NO_GROUND="true"; shift 1 ;;
+            # play
+            --checkpoint)    PLAY_CHECKPOINT="$2"; shift 2 ;;
+            --task)          PLAY_TASK="$2"; shift 2 ;;
+            --viewer)        PLAY_VIEWER="$2"; shift 2 ;;
+            --device)        PLAY_DEVICE="$2"; shift 2 ;;
+            --num-envs)      PLAY_NUM_ENVS="$2"; shift 2 ;;
+            --motion-file)   PLAY_MOTION_FILE="$2"; shift 2 ;;
+            --no-terminations) PLAY_NO_TERMINATIONS="true"; shift 1 ;;
+            --rl-root)       RL_ROOT="$2"; shift 2 ;;
             # rl
             --robot)        RL_ROBOT="$2"; shift 2 ;;
             --rl-task)       RL_TASK="$2"; shift 2 ;;
-            --rl-root)       RL_ROOT="$2"; shift 2 ;;
             --input-fps)     RL_INPUT_FPS="$2"; shift 2 ;;
             --output-fps)    RL_OUTPUT_FPS="$2"; shift 2 ;;
             --export-only)   RL_EXPORT_ONLY="true"; shift 1 ;;
@@ -1568,6 +1751,16 @@ else
                     fi
                 fi
             done
+            ;;
+        play)
+            if [ -z "${PLAY_TASK:-}" ]; then
+                log_error "play 模式需要 --task 参数"
+                show_usage; exit 1
+            fi
+            if [ -z "${PLAY_CHECKPOINT:-}" ]; then
+                log_error "play 模式需要 --checkpoint 参数"
+                show_usage; exit 1
+            fi
             ;;
         rl)
             if [ -z "${RL_ROBOT:-}" ]; then

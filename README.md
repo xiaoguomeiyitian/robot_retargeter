@@ -26,6 +26,18 @@ Directory layout:
 
 ## Installation
 
+### Repository layout
+
+This project depends on `unitree_rl_mjlab` for RL training and inference. It is recommended to place both at the **same directory level**:
+
+```
+work/unitree/
+├── robot_retargeter/          # This project
+└── unitree_rl_mjlab/          # RL training framework (train + play)
+```
+
+`robot_retargeter` auto-detects `../unitree_rl_mjlab`. If installed elsewhere, use the `--rl-root` flag.
+
 ### Clone the repository
 
 ```bash
@@ -79,6 +91,7 @@ After downloading, extract and place `.npz` files under any directory in `datase
 ./start.sh              # Interactive mode (menu selection)
 ./start.sh viser        # Direct launch: Viser browser visualization
 ./start.sh smpl        # Direct launch: SMPL-X retargeting
+./start.sh play        # Direct launch: Run trained policy inference
 ./start.sh doctor       # Environment health check
 ```
 
@@ -88,7 +101,44 @@ Non-interactive mode is also supported for all modes via CLI arguments:
 ./start.sh smpl --motion dataset/ACCAD/Form_1_stageii.npz --robots g1 h2
 ./start.sh viser --port 8080
 ./start.sh mujoco --motion Form_1_stageii --robots g1 h2 t800
+./start.sh play --checkpoint logs/rsl_rl/Unitree-G1-Flat/run_01/model_500.pt --task Unitree-G1-Flat
+./start.sh play --checkpoint logs/rsl_rl/Unitree-G1-Flat/run_01/model_500.pt --task Unitree-G1-Flat --viewer viser
 ```
+
+### Inference (play mode)
+
+The `play` mode calls `unitree_rl_mjlab/scripts/play.py` to load a trained policy and run inference:
+
+```bash
+# Interactive selection
+./start.sh play
+
+# Non-interactive (specify checkpoint and task directly)
+./start.sh play \\
+    --checkpoint logs/rsl_rl/Unitree-G1-Flat/run_01/model_500.pt \\
+    --task Unitree-G1-Flat \\
+    --viewer viser
+
+# Use GPU for inference
+./start.sh play \\
+    --checkpoint logs/rsl_rl/Unitree-G1-Flat/run_01/model_500.pt \\
+    --task Unitree-G1-Flat \\
+    --device cuda:0 \\
+    --viewer viser
+```
+
+Parameters:
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `--checkpoint` | ✅ | Path to trained .pt policy file |
+| `--task` | ✅ | RL task ID (e.g. `Unitree-G1-Flat`) |
+| `--viewer` | No | Viewer backend: `auto`/`viser`/`native` (default `auto`) |
+| `--device` | No | Device: `cuda:0`/`cpu` (default auto-detect) |
+| `--num-envs` | No | Number of parallel envs (default 1) |
+| `--motion-file` | No | Motion file for tracking tasks |
+| `--no-terminations` | No | Disable termination conditions |
+| `--rl-root` | No | unitree_rl_mjlab path (default `../unitree_rl_mjlab`) |
 
 ## Pipeline Scripts
 
