@@ -469,3 +469,89 @@ python scripts/config_loader.py h2 --chain
 | `--motion-file` | `dataset/lafan1_g1/dance1_subject2.csv` | Source motion CSV |
 | `--fps` | `30` | Playback frame rate |
 | `--no-viewer` | False | Run without visualization |
+
+## RL Training Integration
+
+This project integrates with [unitree_rl_mjlab](https://github.com/unitreerobotics/unitree_rl_mjlab) for reinforcement learning training. The pipeline converts retargeted motion into NPZ format compatible with mjlab's `MotionLoader`.
+
+### Export to NPZ
+
+Convert retargeted CSV motion to NPZ format for RL training:
+
+```bash
+# Single file export
+python scripts/export_npz.py \
+    --csv output_data/robot_motion/Form_1_stageii_g1.csv \
+    --robot g1 \
+    --input-fps 30 \
+    --output-fps 50 \
+    --output output_data/npz/Form_1_stageii_g1.npz
+
+# Batch export all CSVs for a robot
+python scripts/export_npz.py \
+    --csv-dir output_data/robot_motion \
+    --robot g1 \
+    --pattern "*.csv" \
+    --output-dir output_data/npz/g1
+```
+
+The output NPZ contains 7 keys compatible with mjlab's `MotionLoader`:
+
+| Key | Shape | Description |
+|-----|-------|-------------|
+| `fps` | (1,) | Frame rate (e.g., 50.0) |
+| `joint_pos` | (T, num_joints) | Joint positions in radians |
+| `joint_vel` | (T, num_joints) | Joint velocities |
+| `body_pos_w` | (T, num_bodies, 3) | Body world positions |
+| `body_quat_w` | (T, num_bodies, 4) | Body world quaternions (wxyz) |
+| `body_lin_vel_w` | (T, num_bodies, 3) | Body linear velocities |
+| `body_ang_vel_w` | (T, num_bodies, 3) | Body angular velocities |
+
+### One-Click Training Pipeline
+
+Chain retarget → NPZ export → RL training in one command:
+
+```bash
+# Full pipeline: retarget + export + train
+python scripts/train_pipeline.py \
+    --robot g1 \
+    --motion-name dance1 \
+    --retarget-config config/robot/g1.yaml \
+    --keypoints output_data/keypoints/dance1_keypoints.pkl \
+    --rl-task unitree_g1_flat_tracking \
+    --rl-root ../unitree_rl_mjlab
+
+# Use existing CSV (skip retarget)
+python scripts/train_pipeline.py \
+    --robot g1 \
+    --motion-name dance1 \
+    --csv output_data/robot_motion/Form_1_stageii_g1.csv \
+    --rl-task unitree_g1_flat_tracking
+
+# Export only (no training)
+python scripts/train_pipeline.py \
+    --robot g1 \
+    --motion-name dance1 \
+    --csv output_data/robot_motion/Form_1_stageii_g1.csv \
+    --export-only
+```
+
+### Training with mjlab
+
+After exporting NPZ, train directly with mjlab:
+
+```bash
+cd ../unitree_rl_mjlab
+python scripts/train.py \
+    --task unitree_g1_flat_tracking \
+    --motion-file ../robot_retargeter/output_data/npz/Form_1_stageii_g1.npz
+```
+
+### Supported Robots
+
+| Robot | DOF | mjlab Task ID |
+|-------|-----|---------------|
+| unitree_g1 | 29 | `unitree_g1_flat_tracking` |
+| unitree_g1_23dof | 23 | `unitree_g1_23dof_flat_tracking` |
+| unitree_h1_2 | 26 | `unitree_h1_2_flat_tracking` |
+| unitree_h2 | 26 | `unitree_h2_flat_tracking` |
