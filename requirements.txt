@@ -3,7 +3,7 @@
 # Install with: pip install -r requirements.txt
 
 mujoco>=3.9.0
-mink>=1.1.1
+mink>=0.0.13
 numpy>=2.0,<3.0
 torch>=2.0
 PyYAML>=6.0

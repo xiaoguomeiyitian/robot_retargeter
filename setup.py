@@ -22,7 +22,7 @@ from setuptools import find_packages, setup
 #   scipy 1.17.1, tqdm 4.67.3, glfw 2.10.0, smplx 0.1.28, trimesh 4.11.5
 INSTALL_REQUIRES = [
     "mujoco>=3.9.0",
-    "mink>=1.1.1",
+    "mink>=0.0.13",
     "numpy>=2.0,<3.0",
     "torch>=2.0",
     "PyYAML>=6.0",
