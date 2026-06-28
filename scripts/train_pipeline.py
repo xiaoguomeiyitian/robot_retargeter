@@ -229,7 +229,14 @@ def main() -> None:
         npz_path = str(Path(args.npz).resolve())
         print(f"Using existing NPZ: {npz_path}")
     else:
-        npz_path = str(export_dir / f"{args.motion_name}_{args.robot}.npz")
+        # Avoid double robot suffix (e.g. Form_1_stageii_g1 → Form_1_stageii_g1.npz, not Form_1_stageii_g1_g1.npz)
+        motion_stem = args.motion_name
+        suffix = f"_{args.robot}"
+        if motion_stem.endswith(suffix):
+            npz_stem = motion_stem
+        else:
+            npz_stem = f"{motion_stem}_{args.robot}"
+        npz_path = str(export_dir / f"{npz_stem}.npz")
 
         # Step 1: Retarget (if CSV not provided)
         if args.csv:
@@ -239,7 +246,7 @@ def main() -> None:
             if not args.retarget_config or not args.keypoints:
                 print("Error: provide --csv, --npz, or both --retarget-config + --keypoints")
                 sys.exit(1)
-            csv_path = str(PROJECT_ROOT / "output_data" / "robot_motion" / f"{args.motion_name}_{args.robot}.csv")
+            csv_path = str(PROJECT_ROOT / "output_data" / "robot_motion" / f"{npz_stem}.csv")
             run_retarget(args.retarget_config, args.keypoints, csv_path)
 
         # Step 2: Export to NPZ

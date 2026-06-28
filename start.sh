@@ -10,6 +10,7 @@
 #   mujoco      使用 MuJoCo 原生可视化
 #   smpl        从 SMPL-X 动作重定向到机器人 (SMPL-X → 机器人)
 #   robot       从源机器人动作重定向到目标机器人 (机器人 → 机器人)
+#   rl          NPZ 导出与 RL 训练流水线 (CSV → NPZ → train)
 #   list        列出所有可用机器人和动作
 #   doctor      环境健康检查
 #
@@ -23,6 +24,8 @@
 #   ./start.sh robot --origin g1 --robots g1 h2 --robot-motion g1:dataset/lafan1_g1/dance1.csv --robot-motion h2:dataset/lafan1_g1/dance2.csv
 #   ./start.sh viser --port 8080                          # 空场景启动，浏览器中动态添加
 #   ./start.sh mujoco --motion Form_1_stageii --robots g1 h2 t800
+#   ./start.sh rl --robot g1 --motion dataset/lafan1_g1/dance1_subject2.csv --rl-task unitree_g1_flat_tracking
+#   ./start.sh rl --robot g1 --motion output_data/robot_motion/Form_1_stageii_g1.csv --export-only
 #   ./start.sh doctor                                # 环境健康检查
 # ============================================================================
 set -euo pipefail
@@ -79,6 +82,32 @@ declare -A MOTION_LABELS_CN=(
     ["body_check_001__A548"]="形体检查"
 )
 
+# 机器人中文名称映射 (与 viser 界面 ROBOT_LABELS_CN 保持一致)
+declare -A ROBOT_LABELS_CN=(
+    ["agibot_x2"]="艾博特 X2"
+    ["booster_t1"]="Booster T1"
+    ["DR02"]="DR02"
+    ["g1"]="G1 人形"
+    ["g1_d"]="G1D"
+    ["h1"]="H1 人形"
+    ["h1_2"]="H1-2 人形"
+    ["h2"]="H2 人形"
+    ["hightorque_hi"]="高力矩 HI"
+    ["hightorque_pi"]="高力矩 PI"
+    ["jaka_pi"]="Jaka PI"
+    ["limx_oli"]="LIMX OLI"
+    ["noetix_e1"]="Noetix E1"
+    ["noetix_n2"]="Noetix N2"
+    ["pm01"]="PM01"
+    ["pnd_adam"]="PND Adam"
+    ["r1"]="R1 人形"
+    ["t800"]="T800"
+    ["tienkung"]="天坤"
+    ["unitree_a2"]="宇树 A2"
+    ["unitree_a2w"]="宇树 A2W"
+    ["xbot"]="XBot"
+)
+
 # 颜色
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
 BLUE='\033[0;34m'; CYAN='\033[1;36m'; BOLD='\033[1m'; NC='\033[0m'
@@ -88,6 +117,48 @@ log_info()  { echo -e "${GREEN}[INFO]${NC} $1"; }
 log_warn()  { echo -e "${YELLOW}[WARN]${NC} $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 log_cmd()   { echo -e "${CYAN}[CMD]${NC}   $1"; }
+
+# ── 中文名辅助函数 ────────────────────────────────────────────────────────
+# 获取机器人显示标签 (英文名 + 中文名)
+get_robot_label_cn() {
+    local name="$1"
+    local cn="${ROBOT_LABELS_CN[$name]:-}"
+    if [ -n "$cn" ] && [ "$cn" != "$name" ]; then
+        echo "${name} (${cn})"
+    else
+        echo "$name"
+    fi
+}
+
+# 获取动作显示标签 (中文名 + 英文名)
+# 支持完整路径输入 (如 dataset/lafan1_g1/dance1_subject2.csv)，
+# 自动提取短名称匹配中文名映射
+get_motion_label_cn() {
+    local name="$1"
+    local cn="${MOTION_LABELS_CN[$name]:-}"
+    if [ -n "$cn" ]; then
+        echo "${cn} (${name})"
+        return
+    fi
+    # 尝试从完整路径提取短名称: 去掉路径和后缀，再去掉 _subjectN / _M 等后缀
+    local base; base="$(basename "$name" .csv)"
+    # 去掉 _subjectN 后缀
+    local stem="${base%%_subject[0-9]*}"
+    # 去掉 _M 后缀 (bones_g1 格式)
+    [ "$stem" = "$base" ] && stem="${base%%_M}"
+    # 去掉 _from_xxx 后缀
+    stem="${stem%%_from_*}"
+    # 去掉已知的机器人名后缀 (如 _g1, _h2 等)
+    for r in "${!ROBOT_LABELS_CN[@]}"; do
+        [ "$stem" != "${stem%_${r}}" ] && stem="${stem%_${r}}" && break
+    done
+    cn="${MOTION_LABELS_CN[$stem]:-}"
+    if [ -n "$cn" ]; then
+        echo "${cn} (${name})"
+    else
+        echo "$name"
+    fi
+}
 
 # ── Python 检测 ────────────────────────────────────────────────────────────
 detect_python() {
@@ -152,7 +223,8 @@ list_robots() {
     log_banner "═══ 可用机器人 (共 ${#robots[@]} 个) ═══"
     echo ""
     for r in $(printf '%s\n' "${robots[@]}" | sort); do
-        echo -e "  ${CYAN}●${NC} $r"
+        local label; label="$(get_robot_label_cn "$r")"
+        echo -e "  ${CYAN}●${NC} ${label}"
     done
     echo ""
 }
@@ -212,10 +284,12 @@ list_motions() {
     echo ""
     for m in $(printf '%s\n' "${motions[@]}" | sort); do
         local robot="${MOTION_SET[$m]:-}"
+        local mlabel; mlabel="$(get_motion_label_cn "$m")"
         if [ -n "$robot" ]; then
-            echo -e "  ${CYAN}●${NC} $m  ${GREEN}(默认机器人: ${robot})${NC}"
+            local rlabel; rlabel="$(get_robot_label_cn "$robot")"
+            echo -e "  ${CYAN}●${NC} ${mlabel}  ${GREEN}(默认机器人: ${rlabel})${NC}"
         else
-            echo -e "  ${CYAN}●${NC} $m"
+            echo -e "  ${CYAN}●${NC} ${mlabel}"
         fi
     done
     echo ""
@@ -293,6 +367,7 @@ show_usage() {
   robot       从源机器人动作重定向到目标机器人
   viser       使用 Viser 浏览器可视化已有动作
   mujoco      使用 MuJoCo 原生可视化已有动作
+  rl          NPZ 导出与 RL 训练流水线 (CSV → NPZ → train)
   list        列出可用机器人和动作
   doctor      环境健康检查
 
@@ -327,6 +402,16 @@ mujoco 模式:
   --render-fps <F>             渲染帧率 (默认: 60)
   --loop                       循环播放
 
+rl 模式:
+  --robot <name>               机器人名称 (必需)
+  --motion <path>              输入动作文件 (.csv)
+  --rl-task <task>              RL 任务 ID (如 unitree_g1_flat_tracking)
+  --rl-root <path>              unitree_rl_mjlab 路径 (默认: ../unitree_rl_mjlab)
+  --input-fps <F>              输入帧率 (默认: 30)
+  --output-fps <F>             输出帧率 (默认: 50)
+  --export-only                 仅导出 NPZ，不启动训练
+  --train-args <str>            传递给 train.py 的额外参数
+
 示例:
   $0 list
   $0 doctor
@@ -337,6 +422,8 @@ mujoco 模式:
   $0 robot --origin g1 --robots g1 h2 --robot-motion g1:dataset/lafan1_g1/dance1.csv --robot-motion h2:dataset/lafan1_g1/dance2.csv
   $0 viser --motion Form_1_stageii --robots g1 h2 t800 --port 8080
   $0 viser --robots g1 h2 --robot-motion g1:Form_1 --robot-motion h2:Form_2 --port 8080
+  $0 rl --robot g1 --motion output_data/robot_motion/Form_1_stageii_g1.csv --rl-task unitree_g1_flat_tracking
+  $0 rl --robot g1 --motion output_data/robot_motion/Form_1_stageii_g1.csv --export-only
 EOF
 }
 
@@ -349,6 +436,7 @@ select_mode() {
         "mujoco — MuJoCo 原生可视化" \
         "smpl   — SMPL-X → 机器人 重定向" \
         "robot  — 机器人 → 机器人 重定向" \
+        "rl     — NPZ 导出与 RL 训练流水线" \
         "list   — 列出可用机器人和动作" \
         "doctor — 环境健康检查")
     case $idx in
@@ -356,21 +444,48 @@ select_mode() {
         1) MODE="mujoco" ;;
         2) MODE="smpl" ;;
         3) MODE="robot" ;;
-        4) MODE="list" ;;
-        5) MODE="doctor" ;;
+        4) MODE="rl" ;;
+        5) MODE="list" ;;
+        6) MODE="doctor" ;;
     esac
     log_info "已选择: $MODE"
 }
 
 # ── 扫描可用机器人 ─────────────────────────────────────────────────────────
+# 排序规则与 viser 界面 _scan_all_robots 一致:
+# 优先级机器人 (g1, g1_d, h1, h1_2, h2, unitree_a2, unitree_a2w) 在前，其余按字母序
 scan_robots() {
     local config_dir="$PROJECT_DIR/config/robot"
-    SCAN_ROBOT_ARRAY=()
+    local all_robots=()
     [ -d "$config_dir" ] || return 0
     for f in "$config_dir"/*.yaml; do
         [ -f "$f" ] || continue
-        SCAN_ROBOT_ARRAY+=("$(basename "$f" .yaml)")
+        all_robots+=("$(basename "$f" .yaml)")
     done
+    # 优先级排序 (与 viser 下拉框一致)
+    local priority=("g1" "g1_d" "h1" "h1_2" "h2" "unitree_a2" "unitree_a2w")
+    local priority_found=()
+    local rest=()
+    for r in "${all_robots[@]}"; do
+        local is_priority=false
+        for p in "${priority[@]}"; do
+            [ "$r" = "$p" ] && is_priority=true && break
+        done
+        if $is_priority; then
+            priority_found+=("$r")
+        else
+            rest+=("$r")
+        fi
+    done
+    # 按优先级顺序排列 + 其余字母排序
+    SCAN_ROBOT_ARRAY=()
+    for p in "${priority[@]}"; do
+        for r in "${priority_found[@]}"; do
+            [ "$r" = "$p" ] && SCAN_ROBOT_ARRAY+=("$r") && break
+        done
+    done
+    IFS=$'\n' sorted_rest=($(printf '%s\n' "${rest[@]}" | sort)); unset IFS
+    SCAN_ROBOT_ARRAY+=("${sorted_rest[@]}")
 }
 
 # ── 交互式选择机器人 (多选) ──────────────────────────────────────────────
@@ -380,13 +495,11 @@ select_robots_multi() {
         log_error "未找到任何机器人配置"
         exit 1
     fi
-    SCAN_ROBOT_SORTED=("${SCAN_ROBOT_ARRAY[@]}")
-
     echo ""
     log_info "可用机器人:"
-    local sorted=($(printf '%s\n' "${SCAN_ROBOT_ARRAY[@]}" | sort))
-    for i in "${!sorted[@]}"; do
-        echo -e "  ${CYAN}$((i+1))${NC}) ${sorted[$i]}"
+    for i in "${!SCAN_ROBOT_ARRAY[@]}"; do
+        local label; label="$(get_robot_label_cn "${SCAN_ROBOT_ARRAY[$i]}")"
+        echo -e "  ${CYAN}$((i+1))${NC}) ${label}"
     done
 
     echo ""
@@ -396,11 +509,11 @@ select_robots_multi() {
 
     SELECTED_ROBOTS=()
     if [ -z "$choice" ]; then
-        SELECTED_ROBOTS=("${sorted[@]}")
+        SELECTED_ROBOTS=("${SCAN_ROBOT_ARRAY[@]}")
     else
         for num in $choice; do
-            if [[ "$num" =~ ^[0-9]+$ ]] && [ "$num" -ge 1 ] && [ "$num" -le "${#sorted[@]}" ]; then
-                SELECTED_ROBOTS+=("${sorted[$((num-1))]}")
+            if [[ "$num" =~ ^[0-9]+$ ]] && [ "$num" -ge 1 ] && [ "$num" -le "${#SCAN_ROBOT_ARRAY[@]}" ]; then
+                SELECTED_ROBOTS+=("${SCAN_ROBOT_ARRAY[$((num-1))]}")
             else
                 log_warn "忽略无效编号: $num"
             fi
@@ -427,7 +540,6 @@ select_robots_with_motions() {
         exit 1
     fi
 
-    local sorted=($(printf '%s\n' "${SCAN_ROBOT_ARRAY[@]}" | sort))
     SELECTED_ROBOTS=()
     ROBOT_MOTIONS=()
     # 用于 viser/mujoco 查找 CSV 的真实机器人名 (去掉 __N 后缀)
@@ -443,17 +555,23 @@ select_robots_with_motions() {
             log_info "已添加的机器人:"
             for i in "${!SELECTED_ROBOTS[@]}"; do
                 local r="${SELECTED_ROBOTS[$i]}"
+                local rlabel; rlabel="$(get_robot_label_cn "${ROBOT_REAL_NAMES[$r]:-$r}")"
                 local m="${ROBOT_MOTIONS[$r]:-<未指定>}"
-                echo -e "  ${GREEN}$((i+1)))${NC} ${CYAN}${r}${NC}  动作: ${m}"
+                echo -e "  ${GREEN}$((i+1)))${NC} ${CYAN}${rlabel}${NC}  动作: ${m}"
             done
             echo ""
         fi
 
         # 选择: 添加机器人 或 完成添加
-        local opts=("${sorted[@]}" "── ✅ 完成添加 ──")
+        # 构建带中文名的选项列表 (使用 SCAN_ROBOT_ARRAY 保持与 viser 一致的排序)
+        local opts=()
+        for s in "${SCAN_ROBOT_ARRAY[@]}"; do
+            opts+=("$(get_robot_label_cn "$s")")
+        done
+        opts+=("── ✅ 完成添加 ──")
         local ri
         ri=$(prompt_select "添加机器人类型 (或完成添加):" "${opts[@]}")
-        if [ "$ri" -ge "${#sorted[@]}" ]; then
+        if [ "$ri" -ge "${#SCAN_ROBOT_ARRAY[@]}" ]; then
             if [ ${#SELECTED_ROBOTS[@]} -eq 0 ]; then
                 # viser/mujoco mode: allow empty start (add via browser)
                 if [ "$mode" = "viser" ]; then
@@ -465,7 +583,7 @@ select_robots_with_motions() {
             break
         fi
 
-        local rtype="${sorted[$ri]}"
+        local rtype="${SCAN_ROBOT_ARRAY[$ri]}"
 
         # 数量
         local count
@@ -513,11 +631,10 @@ select_robots_with_motions() {
                     scan_motions
                     if [ ${#SCAN_MOTION_ARRAY[@]} -gt 0 ]; then
                         local sorted_motions=($(printf '%s\n' "${SCAN_MOTION_ARRAY[@]}" | sort))
-                        # 显示中文名
+                        # 显示中文名 (与 viser 界面一致: 中文名 (英文名))
                         local display_opts=()
                         for m in "${sorted_motions[@]}"; do
-                            local cn="${MOTION_LABELS_CN[$m]:-}"
-                            [ -n "$cn" ] && display_opts+=("$m (${cn})") || display_opts+=("$m")
+                            display_opts+=("$(get_motion_label_cn "$m")")
                         done
                         local mi
                         mi=$(prompt_select "  选择动作:" "${display_opts[@]}")
@@ -727,6 +844,53 @@ config_mujoco() {
     # 循环
     if [ "$(prompt_yn "循环播放?" "y")" = "true" ]; then
         LOOP="true"
+    fi
+}
+
+# ── rl 模式交互配置 ───────────────────────────────────────────────────────
+config_rl() {
+    echo ""
+    log_banner "── RL 训练流水线配置 ──"
+    echo ""
+
+    # 机器人 (使用 SCAN_ROBOT_ARRAY 保持与 viser 一致的排序)
+    scan_robots
+    local robot_opts=()
+    for s in "${SCAN_ROBOT_ARRAY[@]}"; do
+        robot_opts+=("$(get_robot_label_cn "$s")")
+    done
+    local ri
+    ri=$(prompt_select "选择机器人:" "${robot_opts[@]}")
+    RL_ROBOT="${SCAN_ROBOT_ARRAY[$ri]}"
+
+    # 输入 CSV
+    echo ""
+    log_info "选择输入动作文件:"
+    scan_robot_motions
+    if [ ${#SCAN_ROBOT_MOTION_ARRAY[@]} -gt 0 ]; then
+        local sorted_motions=($(printf '%s\n' "${SCAN_ROBOT_MOTION_ARRAY[@]}" | sort))
+        local mi
+        mi=$(prompt_select "  选择动作 CSV:" "${sorted_motions[@]}")
+        RL_CSV="$PROJECT_DIR/${sorted_motions[$mi]}"
+    else
+        RL_CSV=$(prompt_input "  动作 CSV 路径" "" true)
+    fi
+
+    # 帧率
+    echo ""
+    RL_INPUT_FPS=$(prompt_input "输入帧率" "30")
+    RL_OUTPUT_FPS=$(prompt_input "输出帧率 (NPZ)" "50")
+
+    # 是否仅导出
+    if [ "$(prompt_yn "仅导出 NPZ (不启动训练)?" "n")" = "true" ]; then
+        RL_EXPORT_ONLY="true"
+    else
+        RL_EXPORT_ONLY="false"
+        # RL 任务
+        local default_task="unitree_${RL_ROBOT}_flat_tracking"
+        RL_TASK=$(prompt_input "RL 任务 ID" "$default_task")
+        # RL 根目录
+        RL_ROOT=$(prompt_input "unitree_rl_mjlab 路径" "$PROJECT_DIR/../unitree_rl_mjlab")
     fi
 }
 
@@ -1034,6 +1198,60 @@ build_and_run() {
             exec "$PYTHON_BIN" scripts/multi_robot_visualize.py "${mujoco_args[@]}"
             ;;
 
+        rl)
+            # RL 训练流水线: CSV → NPZ → train
+            local rl_robot="${RL_ROBOT:-}"
+            local rl_csv="${RL_CSV:-$MOTION_FILE}"
+            local rl_input_fps="${RL_INPUT_FPS:-30}"
+            local rl_output_fps="${RL_OUTPUT_FPS:-50}"
+            local rl_task="${RL_TASK:-}"
+            local rl_root="${RL_ROOT:-$PROJECT_DIR/../unitree_rl_mjlab}"
+            local rl_export_only="${RL_EXPORT_ONLY:-false}"
+
+            if [ -z "$rl_robot" ]; then
+                log_error "rl 模式需要 --robot 参数"
+                exit 1
+            fi
+            if [ -z "$rl_csv" ]; then
+                log_error "rl 模式需要 --motion 参数 (CSV 文件路径)"
+                exit 1
+            fi
+
+            # 动作名称 (用于 NPZ 文件命名)
+            local motion_stem
+            motion_stem="$(basename "$rl_csv" .csv)"
+
+            echo ""
+            log_banner "══════════════════ RL 训练流水线 ══════════════════"
+            log_info "机器人: $rl_robot"
+            log_info "输入 CSV: $rl_csv"
+            log_info "帧率: ${rl_input_fps} fps → ${rl_output_fps} fps (NPZ)"
+            if [ "$rl_export_only" = "true" ]; then
+                log_info "模式: 仅导出 NPZ"
+            else
+                log_info "RL 任务: $rl_task"
+                log_info "RL 根目录: $rl_root"
+            fi
+            echo ""
+
+            # 构建 train_pipeline.py 参数
+            local pipeline_args=(
+                --robot "$rl_robot"
+                --motion-name "$motion_stem"
+                --csv "$rl_csv"
+                --input-fps "$rl_input_fps"
+                --output-fps "$rl_output_fps"
+            )
+            if [ "$rl_export_only" = "true" ]; then
+                pipeline_args+=(--export-only)
+            else
+                pipeline_args+=(--rl-task "$rl_task" --rl-root "$rl_root")
+                [ -n "${RL_TRAIN_ARGS:-}" ] && pipeline_args+=(--train-args "$RL_TRAIN_ARGS")
+            fi
+
+            exec "$PYTHON_BIN" scripts/train_pipeline.py "${pipeline_args[@]}"
+            ;;
+
         list)
             echo ""
             log_banner "══════════════════ 资源列表 ══════════════════"
@@ -1163,6 +1381,18 @@ confirm_config() {
             echo -e "  帧率:       ${BOLD}源${SOURCE_FPS} / 渲染${RENDER_FPS}${NC}"
             echo -e "  循环:       ${BOLD}${LOOP}${NC}"
             ;;
+        rl)
+            echo -e "  模式:       ${BOLD}rl${NC} (RL 训练流水线)"
+            echo -e "  机器人:     ${BOLD}${RL_ROBOT:-}${NC}"
+            echo -e "  输入 CSV:   ${BOLD}${RL_CSV:-$MOTION_FILE}${NC}"
+            echo -e "  帧率:       ${BOLD}${RL_INPUT_FPS:-30} fps → ${RL_OUTPUT_FPS:-50} fps${NC}"
+            if [ "${RL_EXPORT_ONLY:-false}" = "true" ]; then
+                echo -e "  操作:       ${BOLD}仅导出 NPZ${NC}"
+            else
+                echo -e "  RL 任务:    ${BOLD}${RL_TASK:-}${NC}"
+                echo -e "  RL 根目录:  ${BOLD}${RL_ROOT:-}${NC}"
+            fi
+            ;;
         list)
             echo -e "  模式:       ${BOLD}list${NC}"
             ;;
@@ -1195,6 +1425,7 @@ if [ $# -eq 0 ]; then
         robot)   config_robot ;;
         viser)   config_viser ;;
         mujoco)  config_mujoco ;;
+        rl)      config_rl ;;
         list)    ;;
         doctor)  ;;
     esac
@@ -1212,7 +1443,7 @@ if [ $# -eq 0 ]; then
 else
     # ── 非交互式 ──
     case "${1:-}" in
-        smpl|robot|viser|mujoco|list|doctor) MODE="$1"; shift ;;
+        smpl|robot|viser|mujoco|rl|list|doctor) MODE="$1"; shift ;;
         -h|--help|help) show_usage; exit 0 ;;
         *) log_error "未知模式: $1"; show_usage; exit 1 ;;
     esac
@@ -1263,6 +1494,14 @@ else
             --port)         VISER_PORT="$2"; shift 2 ;;
             --loop)         LOOP="true"; shift 1 ;;
             --no-ground)     NO_GROUND="true"; shift 1 ;;
+            # rl
+            --robot)        RL_ROBOT="$2"; shift 2 ;;
+            --rl-task)       RL_TASK="$2"; shift 2 ;;
+            --rl-root)       RL_ROOT="$2"; shift 2 ;;
+            --input-fps)     RL_INPUT_FPS="$2"; shift 2 ;;
+            --output-fps)    RL_OUTPUT_FPS="$2"; shift 2 ;;
+            --export-only)   RL_EXPORT_ONLY="true"; shift 1 ;;
+            --train-args)    RL_TRAIN_ARGS="$2"; shift 2 ;;
             # help
             -h|--help|help) show_usage; exit 0 ;;
             *)
@@ -1329,6 +1568,16 @@ else
                     fi
                 fi
             done
+            ;;
+        rl)
+            if [ -z "${RL_ROBOT:-}" ]; then
+                log_error "rl 模式需要 --robot 参数"
+                show_usage; exit 1
+            fi
+            if [ -z "${MOTION_FILE:-}" ]; then
+                log_error "rl 模式需要 --motion 参数 (CSV 文件路径)"
+                show_usage; exit 1
+            fi
             ;;
     esac
 
