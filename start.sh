@@ -6,6 +6,7 @@
 # 非交互:   ./start.sh <mode> [args...]
 #
 # 模式:
+#   video       从真人视频提取动作并重定向到机器人 (视频 → SMPL-X → 机器人)
 #   viser       使用 Viser 浏览器可视化 (空场景启动，浏览器中动态添加机器人)
 #   mujoco      使用 MuJoCo 原生可视化
 #   smpl        从 SMPL-X 动作重定向到机器人 (SMPL-X → 机器人)
@@ -48,6 +49,11 @@ SOURCE_FPS="30"
 RENDER_FPS="30"
 ORIGIN_ROBOT="g1"
 RENDER_DEBUG="false"
+
+# video 模式专用
+VIDEO_PATH=""
+VIDEO_ROBOTS="g1"
+VIDEO_MAX_FRAMES=""
 
 # 每个机器人对应的动作文件 (robot:motion 模式)
 # 在交互模式下由 select_robots_with_motions 填充
@@ -366,6 +372,7 @@ show_usage() {
   $0 <mode> [args...]             # 非交互式启动
 
 模式:
+  video       从真人视频提取动作并重定向到机器人 (视频 → SMPL-X → 机器人)
   smpl        从 SMPL-X 动作重定向到目标机器人
   robot       从源机器人动作重定向到目标机器人
   viser       使用 Viser 浏览器可视化已有动作
@@ -451,6 +458,7 @@ select_mode() {
     local idx=$(prompt_select "请选择启动模式:" \
         "viser  — Viser 浏览器可视化" \
         "mujoco — MuJoCo 原生可视化" \
+        "video  — 真人视频 → 机器人 重定向" \
         "smpl   — SMPL-X → 机器人 重定向" \
         "robot  — 机器人 → 机器人 重定向" \
         "play   — 推理运行训练好的策略" \
@@ -460,12 +468,13 @@ select_mode() {
     case $idx in
         0) MODE="viser" ;;
         1) MODE="mujoco" ;;
-        2) MODE="smpl" ;;
-        3) MODE="robot" ;;
-        4) MODE="play" ;;
-        5) MODE="rl" ;;
-        5) MODE="list" ;;
-        6) MODE="doctor" ;;
+        2) MODE="video" ;;
+        3) MODE="smpl" ;;
+        4) MODE="robot" ;;
+        5) MODE="play" ;;
+        6) MODE="rl" ;;
+        7) MODE="list" ;;
+        8) MODE="doctor" ;;
     esac
     log_info "已选择: $MODE"
 }
@@ -699,6 +708,77 @@ scan_smpl_motions() {
             [ "$exists" = false ] && SCAN_SMPL_MOTION_ARRAY+=("$base")
         done
     done
+}
+
+# ── video 模式交互配置 ───────────────────────────────────────────────────
+config_video() {
+    echo ""
+    log_banner "── 真人视频 → 机器人 重定向配置 ──"
+    echo ""
+
+    # 视频文件路径 — 从视频目录中选择
+    local video_dir="$PROJECT_DIR/dataset/videos"
+    # 如果目录不存在，尝试创建
+    [ ! -d "$video_dir" ] && mkdir -p "$video_dir"
+
+    # 扫描视频文件
+    local video_exts=("mp4" "avi" "mov" "mkv" "webm" "flv" "wmv")
+    local video_files=()
+    for ext in "${video_exts[@]}"; do
+        for f in "$video_dir"/*."$ext"; do
+            [ -f "$f" ] && video_files+=("$f")
+        done
+    done
+
+    if [ ${#video_files[@]} -gt 0 ]; then
+        echo ""
+        log_info "视频目录: $video_dir"
+        echo ""
+        # 构建显示选项 (文件名 + 大小)
+        local display_opts=()
+        for vf in "${video_files[@]}"; do
+            local vname; vname="$(basename "$vf")"
+            local vsize; vsize=$(du -h "$vf" 2>/dev/null | cut -f1)
+            display_opts+=("${vname} (${vsize})")
+        done
+        display_opts+=("── 手动输入路径 ──")
+        local vi
+        vi=$(prompt_select "选择视频文件:" "${display_opts[@]}")
+        if [ "$vi" -eq $(( ${#video_files[@]} )) ]; then
+            # 手动输入路径
+            VIDEO_PATH=$(prompt_input "视频文件路径" "" true)
+        else
+            VIDEO_PATH="${video_files[$vi]}"
+            log_info "已选择: $(basename "$VIDEO_PATH")"
+        fi
+    else
+        log_warn "视频目录为空: $video_dir"
+        log_info "请将视频文件放入该目录，或手动输入路径"
+        echo ""
+        VIDEO_PATH=$(prompt_input "视频文件路径" "" true)
+    fi
+
+    if [ ! -f "$VIDEO_PATH" ]; then
+        log_error "视频文件不存在: $VIDEO_PATH"
+        exit 1
+    fi
+
+    # 目标机器人 (默认 g1)
+    echo ""
+    VIDEO_ROBOTS=$(prompt_input "目标机器人 (多个用空格分隔)" "g1")
+
+    # 最大帧数 (默认全部)
+    echo ""
+    VIDEO_MAX_FRAMES=$(prompt_input "最大处理帧数 (回车=全部)" "")
+
+    # 帧率 (默认 30)
+    echo ""
+    SOURCE_FPS=$(prompt_input "输出帧率" "30")
+
+    # 调试渲染
+    if [ "$(prompt_yn "启用调试渲染 (显示关键点匹配)?" "n")" = "true" ]; then
+        RENDER_DEBUG="true"
+    fi
 }
 
 # ── smpl 模式交互配置 ─────────────────────────────────────────────────────
@@ -1006,6 +1086,53 @@ config_rl() {
 # ══════════════════════════════════════════════════════════════════════════════
 build_and_run() {
     case "$MODE" in
+        video)
+            # 视频 → 机器人 流水线
+            echo ""
+            log_banner "══════════════════ 真人视频 → 机器人 ══════════════════"
+            log_info "视频: $VIDEO_PATH"
+            log_info "目标机器人: $VIDEO_ROBOTS"
+            log_info "输出帧率: $SOURCE_FPS"
+            [ -n "$VIDEO_MAX_FRAMES" ] && log_info "最大帧数: $VIDEO_MAX_FRAMES"
+            echo ""
+
+            # 解析机器人列表
+            read -r -a video_robot_arr <<< "$VIDEO_ROBOTS"
+
+            # 构建 video_to_robot.py 参数
+            local video_args=(
+                --video "$VIDEO_PATH"
+                --robots "${video_robot_arr[@]}"
+                --output-dir "output_data/video_to_robot"
+                --fps "$SOURCE_FPS"
+            )
+            [ -n "$VIDEO_MAX_FRAMES" ] && video_args+=(--max-frames "$VIDEO_MAX_FRAMES")
+
+            log_info "执行视频→机器人流水线..."
+            echo ""
+            "$PYTHON_BIN" scripts/video_to_robot.py "${video_args[@]}"
+
+            # 可视化
+            echo ""
+            log_info "流水线完成，启动可视化..."
+            local motion_stem
+            motion_stem="$(basename "${VIDEO_PATH%.*}")_smplx"
+
+            local viser_args=(
+                --motion "$motion_stem"
+                --robots "${video_robot_arr[@]}"
+                --source_fps "$SOURCE_FPS"
+                --render_fps "${RENDER_FPS:-30}"
+                --port "$VISER_PORT"
+            )
+            [ "$LOOP" = "true" ] && viser_args+=(--loop)
+            [ "$NO_GROUND" = "true" ] && viser_args+=(--no-ground)
+
+            log_info "启动 Viser 可视化..."
+            echo ""
+            exec "$PYTHON_BIN" scripts/multi_robot_visualize_viser.py "${viser_args[@]}"
+            ;;
+
         smpl)
             local robot_list="${SELECTED_ROBOTS[*]:-$VIS_ROBOTS}"
             local num_robots
@@ -1503,6 +1630,14 @@ confirm_config() {
     echo ""
 
     case "$MODE" in
+        video)
+            echo -e "  模式:       ${BOLD}video${NC} (真人视频 → 机器人)"
+            echo -e "  视频文件:   ${BOLD}${VIDEO_PATH:-}${NC}"
+            echo -e "  目标机器人: ${BOLD}${VIDEO_ROBOTS:-}${NC}"
+            [ -n "${VIDEO_MAX_FRAMES:-}" ] && echo -e "  最大帧数:   ${BOLD}${VIDEO_MAX_FRAMES}${NC}"
+            echo -e "  输出帧率:   ${BOLD}${SOURCE_FPS}${NC}"
+            echo -e "  调试渲染:   ${BOLD}${RENDER_DEBUG}${NC}"
+            ;;
         smpl)
             echo -e "  模式:       ${BOLD}smpl${NC} (SMPL-X → 机器人)"
             echo -e "  目标机器人: ${BOLD}${SELECTED_ROBOTS[*]}${NC}"
@@ -1595,6 +1730,7 @@ if [ $# -eq 0 ]; then
     echo ""
     select_mode
     case "$MODE" in
+        video)   config_video ;;
         smpl)    config_smpl ;;
         robot)   config_robot ;;
         viser)   config_viser ;;
@@ -1618,7 +1754,7 @@ if [ $# -eq 0 ]; then
 else
     # ── 非交互式 ──
     case "${1:-}" in
-        smpl|robot|viser|mujoco|play|rl|list|doctor) MODE="$1"; shift ;;
+        video|smpl|robot|viser|mujoco|play|rl|list|doctor) MODE="$1"; shift ;;
         -h|--help|help) show_usage; exit 0 ;;
         *) log_error "未知模式: $1"; show_usage; exit 1 ;;
     esac
@@ -1628,9 +1764,14 @@ else
     SELECTED_ROBOTS=()
     ROBOT_MOTIONS=()
     MOTION_FILE=""
+    VIDEO_PATH=""
+    VIDEO_ROBOTS="g1"
+    VIDEO_MAX_FRAMES=""
     while [ $# -gt 0 ]; do
         case "$1" in
             # 通用
+            --video)        VIDEO_PATH="$2"; shift 2 ;;
+            --max-frames)   VIDEO_MAX_FRAMES="$2"; shift 2 ;;
             --motion)       MOTION_FILE="$2"; shift 2 ;;
             --robots)
                 # 支持 --robots g1 h2 t800 或 --robots "g1 h2 t800"
@@ -1694,6 +1835,12 @@ else
 
     # 校验必需参数
     case "$MODE" in
+        video)
+            if [ -z "$VIDEO_PATH" ]; then
+                log_error "video 模式需要 --video 参数"
+                show_usage; exit 1
+            fi
+            ;;
         smpl|robot)
             # 如果没有 --motion, 检查是否所有机器人都有 --robot-motion
             if [ -z "$MOTION_FILE" ]; then

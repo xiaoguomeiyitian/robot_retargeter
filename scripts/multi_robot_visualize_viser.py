@@ -644,11 +644,16 @@ class MultiRobotViserApp:
         self.n_frames = min(inst.qpos_data.shape[0] for inst in self.active_robots) if self.active_robots else 0
         self.current_frame = min(self.current_frame, max(0, self.n_frames - 1))
 
+        # Update GUI slider max if GUI is already built
+        if hasattr(self, 'gui_frame'):
+            self.gui_frame.max = max(1, self.n_frames - 1)
+
         print(f"[rebuild] {len(self.active_robots)} robots, {self.n_frames} frames, "
               f"{len(self.batched_handles)} mesh groups")
 
         # Update frame slider range (unified location)
-        self.gui_frame.max = max(1, self.n_frames - 1)
+        if hasattr(self, 'gui_frame'):
+            self.gui_frame.max = max(1, self.n_frames - 1)
         self._reset_type_counts()
 
     # ── Layout ───────────────────────────────────────────────────────

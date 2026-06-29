@@ -45,3 +45,6 @@ output_data/
 view_mjcf.py
 
 dataset/private/**
+dataset/videos/**
+asset/models
+logs

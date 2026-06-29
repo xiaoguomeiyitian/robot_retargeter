@@ -377,9 +377,14 @@ def export_csv_to_npz(
         joint_qpos_start.append(qpos_adr)
 
     # Allocate output arrays
+    # NOTE: MotionLoader 使用 body_indexes 对 body_pos_w 做 fancy indexing:
+    #   self.body_pos_w = self._body_pos_w[:, self._body_indexes]
+    # 因此 body_pos_w 的维度 1 必须是模型 body 总数（而非 tracking 任务的
+    # body_names 数量），否则 body_indexes 最大值超过维度 1 会越界。
+    num_model_bodies = model.nbody - 1  # exclude world
     joint_pos_all = np.zeros((output_frames, num_joints), dtype=np.float32)
-    body_pos_all = np.zeros((output_frames, len(body_names), 3), dtype=np.float32)
-    body_quat_all = np.zeros((output_frames, len(body_names), 4), dtype=np.float32)
+    body_pos_all = np.zeros((output_frames, num_model_bodies, 3), dtype=np.float32)
+    body_quat_all = np.zeros((output_frames, num_model_bodies, 4), dtype=np.float32)
 
     print(f"  Running forward kinematics...")
     for t in range(output_frames):
@@ -401,10 +406,11 @@ def export_csv_to_npz(
         for j, qpos_adr in enumerate(joint_qpos_start):
             joint_pos_all[t, j] = data.qpos[qpos_adr]
 
-        # Extract body states
-        for b, body_idx in enumerate(body_indices):
-            body_pos_all[t, b] = data.xpos[body_idx]
-            body_quat_all[t, b] = data.xquat[body_idx]  # wxyz
+        # Extract body states (store all model bodies; MotionLoader will
+        # select the subset it needs via body_indexes)
+        for b in range(num_model_bodies):
+            body_pos_all[t, b] = data.xpos[b + 1]  # skip world (index 0)
+            body_quat_all[t, b] = data.xquat[b + 1]  # wxyz
 
     # Compute velocities
     print(f"  Computing velocities...")
@@ -413,13 +419,13 @@ def export_csv_to_npz(
     )
 
     # Compute body velocities via finite differences
-    body_lin_vel = np.zeros((output_frames, len(body_names), 3), dtype=np.float32)
-    body_ang_vel = np.zeros((output_frames, len(body_names), 3), dtype=np.float32)
+    body_lin_vel = np.zeros((output_frames, num_model_bodies, 3), dtype=np.float32)
+    body_ang_vel = np.zeros((output_frames, num_model_bodies, 3), dtype=np.float32)
 
-    for b in range(len(body_names)):
+    for b in range(num_model_bodies):
         body_lin_vel[:, b] = np.gradient(body_pos_all[:, b], output_dt, axis=0)
 
-    for b in range(len(body_names)):
+    for b in range(num_model_bodies):
         for t in range(1, output_frames - 1):
             q_prev = body_quat_all[t - 1, b]
             q_next = body_quat_all[t + 1, b]
