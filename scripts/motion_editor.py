@@ -51,7 +51,7 @@ def main() -> None:
     robot = args.robot
     csv_path = os.path.join(args.motion_dir, f"{args.motion}_{robot}.csv")
     if not os.path.isfile(csv_path):
-        raise FileNotFoundError(f"Motion file not found: {csv_path}")
+        raise FileNot找到Error(f"Motion file not found: {csv_path}")
 
     # Load motion
     qpos = load_motion(csv_path)

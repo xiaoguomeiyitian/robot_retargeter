@@ -61,10 +61,10 @@ def get_robot_xml(robot: str) -> str:
         # Fallback: try g1 config for LAFAN1-style subjects without their own config
         fallback = os.path.join(ROBOT_CONFIG_DIR, "g1.yaml")
         if os.path.isfile(fallback):
-            print(f"[WARN] No config for '{robot}', falling back to 'g1'")
+            print(f"[警告] 未找到 '{robot}', 回退到 'g1'")
             config_path = fallback
         else:
-            raise FileNotFoundError(f"Robot config not found: {config_path}")
+            raise FileNot找到Error(f"Robot config not found: {config_path}")
     with open(config_path, "r", encoding="utf-8") as f:
         config = yaml.safe_load(f)
     xml_path = config.get("robot_xml_path")
@@ -290,7 +290,7 @@ def main() -> None:
                 break
 
         if not csv_path:
-            raise FileNotFoundError(f"Motion file not found for {robot}")
+            raise FileNot找到Error(f"Motion file not found for {robot}")
         robot_qpos[robot] = load_motion(csv_path)
 
     n_frames = min(q.shape[0] for q in robot_qpos.values())
@@ -351,7 +351,7 @@ def main() -> None:
     # Use dt = step / source_fps to preserve real-time playback speed.
     step = max(1, round(args.source_fps / args.render_fps))
     dt = step / args.source_fps
-    print(f"source_fps={args.source_fps:g}, render_fps≈{args.source_fps / step:g}, render_every={step} frame(s)")
+    print(f"源帧率={args.source_fps:g}, 渲染帧率≈{args.source_fps / step:g}, 每{step} 帧渲染一次")
     apply_frame(0)
 
     # Playback control state, updated by keyboard callback
@@ -361,12 +361,12 @@ def main() -> None:
         # Space: pause/resume; R: replay from start
         if keycode == ord(" "):
             state["paused"] = not state["paused"]
-            print("Paused" if state["paused"] else "Resumed")
+            print("已暂停" if state["paused"] else "已恢复")
         elif keycode in (ord("r"), ord("R")):
             state["replay"] = True
-            print("Replay")
+            print("重播")
 
-    print("Controls: [Space] Pause/Resume  [R] Replay")
+    print("操作说明: [Space] 暂停/恢复  [R] 重播")
 
     # Progress bar in rendered frames (total is after step-based frame skipping)
     total_render_frames = math.ceil(n_frames / step)
@@ -383,7 +383,7 @@ def main() -> None:
                 state["frame"] = 0
                 state["replay"] = False
                 state["paused"] = False
-                pbar.reset(total=total_render_frames)
+                pbar.重置(total=total_render_frames)
 
             apply_frame(state["frame"])
             viewer.sync()
@@ -397,7 +397,7 @@ def main() -> None:
                 if state["frame"] >= n_frames:
                     if args.loop:
                         state["frame"] = 0
-                        pbar.reset(total=total_render_frames)
+                        pbar.重置(total=total_render_frames)
                     else:
                         # Stay at the last frame; wait for R replay or window close
                         state["frame"] = n_frames - 1

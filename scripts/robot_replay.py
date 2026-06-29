@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Replay robot motion CSV and export retargeted keypoints.
+"""重播 robot motion CSV and export retargeted keypoints.
 
 This script loads a source-robot motion CSV, replays it through MuJoCo,
 retargets body keypoints to a target robot, and saves a keypoint payload.
@@ -92,7 +92,7 @@ IDENTITY_QUAT_WXYZ = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32)
 
 def parse_args() -> argparse.Namespace:
 	parser = argparse.ArgumentParser(
-		description="Replay a robot-motion CSV and generate target-robot keypoints."
+		description="重播 a robot-motion CSV and generate target-robot keypoints."
 	)
 	parser.add_argument(
 		"--motion-file",
@@ -131,7 +131,7 @@ def parse_args() -> argparse.Namespace:
 		"--stride",
 		type=int,
 		default=1,
-		help="Replay every Nth frame.",
+		help="重播 every Nth frame.",
 	)
 	parser.add_argument(
 		"--fps",
@@ -168,7 +168,7 @@ def resolve_motion_file(motion_file: Path | None, source_robot_config_path: Path
 	if motion_file is not None:
 		resolved = motion_file.expanduser().resolve()
 		if not resolved.exists():
-			raise FileNotFoundError(f"Robot motion CSV not found: {resolved}")
+			raise FileNot找到Error(f"Robot motion CSV not found: {resolved}")
 		return resolved
 
 	keypoints_path = load_path_config(source_robot_config_path, "keypoints_path").expanduser().resolve()
@@ -178,7 +178,7 @@ def resolve_motion_file(motion_file: Path | None, source_robot_config_path: Path
 	derived = Path("output_data/robot_motion") / f"{keypoint_stem}_{source_robot_config_path.stem}.csv"
 	resolved = derived.expanduser().resolve()
 	if not resolved.exists():
-		raise FileNotFoundError(
+		raise FileNot找到Error(
 			"Robot motion CSV not found. Provide --motion-file or generate it first with robot_retarget.py: "
 			f"{resolved}"
 		)
@@ -217,7 +217,7 @@ def load_robot_motion_fps(source_robot_config_path: Path, fps_override: float) -
 
 def load_yaml_body_list_config(config_path: Path, field_name: str) -> tuple[str, ...]:
 	if not config_path.exists():
-		raise FileNotFoundError(f"Config file not found: {config_path}")
+		raise FileNot找到Error(f"Config file not found: {config_path}")
 	with config_path.open("r", encoding="utf-8") as f:
 		config = yaml.safe_load(f) or {}
 	value = config.get(field_name)
@@ -231,7 +231,7 @@ def load_yaml_body_list_config(config_path: Path, field_name: str) -> tuple[str,
 
 def load_scalar_bool_config(config_path: Path, field_name: str, default: bool = False) -> bool:
 	if not config_path.exists():
-		raise FileNotFoundError(f"Config file not found: {config_path}")
+		raise FileNot找到Error(f"Config file not found: {config_path}")
 	with config_path.open("r", encoding="utf-8") as f:
 		config = yaml.safe_load(f) or {}
 	value = config.get(field_name, default)
@@ -719,15 +719,15 @@ def print_robot_summary(
 	contact_names: tuple[str, ...],
 ) -> None:
 	duration = positions.shape[0] / fps if fps > 0 else 0.0
-	print(f"motion_file: {motion_file}")
-	print(f"source_robot_config: {source_robot_config_path}")
-	print(f"target_robot_config: {target_robot_config_path}")
-	print(f"frames_total: {positions.shape[0]}")
-	print(f"frames_selected: {selected_frames.shape[0]}")
-	print(f"fps: {fps:.3f}")
-	print(f"duration_sec: {duration:.3f}")
-	print(f"output_keypoints: {output_path}")
-	print(f"contact_names: {list(contact_names)}")
+	print(f"  动作文件: {motion_file}")
+	print(f"  源机器人配置: {source_robot_config_path}")
+	print(f"  目标机器人配置: {target_robot_config_path}")
+	print(f"  总帧数: {positions.shape[0]}")
+	print(f"  选中帧数: {selected_frames.shape[0]}")
+	print(f"  帧率: {fps:.3f}")
+	print(f"  时长: {duration:.3f}s")
+	print(f"  输出关键点: {output_path}")
+	print(f"  接触点名称: {list(contact_names)}")
 
 
 def play_robot_motion(
@@ -791,7 +791,7 @@ def play_robot_motion(
 				contact_states=None if contact_states is None else contact_states[frame_idx],
 			)
 
-	print("Controls: Space play/pause, ',' back 1, '.' forward 1, '[' back 10, ']' forward 10, 'R' reset")
+	print("操作说明: Space play/pause, ',' 后退 1 帧, '.' 前进 1 帧, '[' 后退 1 帧0, ']' 前进 1 帧0, 'R' 重置")
 	with mujoco.viewer.launch_passive(model, data, key_callback=key_callback) as viewer:
 		last_advance_time = time.perf_counter()
 		last_progress_line = ""
@@ -978,21 +978,6 @@ def main() -> None:
 			output_path=keypoint_output_path,
 			contact_names=contact_names,
 		)
-		print(f"contact_states_shape: {contact_states.shape}")
-		print(f"contact_height_lpf_alpha: {contact_height_lpf_alpha}")
-		print(f"knee_angle_offset_degrees: {knee_angle_offset_degrees}")
-		print(f"robot_leg_length: {robot_leg_length}")
-		print(f"source_leg_length: {source_leg_length}")
-		print(f"leg_displacement_scale: {leg_displacement_scale}")
-		print(f"source_robot_mjcf_path: {source_robot_mjcf_path}")
-		print(f"target_robot_mjcf_path: {target_robot_mjcf_path}")
-		print(f"target_robot_link_lengths: {target_robot_link_lengths}")
-		print(f"retarget_keypoints_shape: {retarget_keypoints.shape}")
-		print(f"retarget_keypoint_quaternions_shape: {retarget_keypoint_quaternions.shape}")
-		print(f"contact_height_offsets_shape: {contact_height_offsets.shape}")
-		print(f"source_link_vectors: {source_link_vectors}")
-		print(f"link_scales: {link_scales}")
-		print(f"link_scale_is_static: {link_scale_is_static}")
 
 	if args.no_viewer:
 		return

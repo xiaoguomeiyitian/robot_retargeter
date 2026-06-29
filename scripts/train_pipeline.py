@@ -141,7 +141,7 @@ def run_retarget(
 ) -> None:
     """Run robot retargeting to produce CSV."""
     print("=" * 60)
-    print("Step 1: Running retarget...")
+    print("步骤 1: 正在执行重定向...")
     print("=" * 60)
 
     cmd = [
@@ -150,11 +150,11 @@ def run_retarget(
         "--keypoints", keypoints_path,
         "--output", output_csv,
     ]
-    print(f"  Command: {' '.join(cmd)}")
+    print(f"  命令: {' '.join(cmd)}")
     result = subprocess.run(cmd, cwd=str(PROJECT_ROOT))
     if result.returncode != 0:
         raise RuntimeError(f"Retarget failed with code {result.returncode}")
-    print("  ✅ Retarget complete!\n")
+    print("  ✅ 重定向完成!\n")
 
 
 def run_export(
@@ -166,7 +166,7 @@ def run_export(
 ) -> None:
     """Export CSV to NPZ format."""
     print("=" * 60)
-    print("Step 2: Exporting to NPZ...")
+    print("步骤 2: 正在导出为 NPZ...")
     print("=" * 60)
 
     cmd = [
@@ -177,11 +177,11 @@ def run_export(
         "--output-fps", str(output_fps),
         "--output", output_npz,
     ]
-    print(f"  Command: {' '.join(cmd)}")
+    print(f"  命令: {' '.join(cmd)}")
     result = subprocess.run(cmd, cwd=str(PROJECT_ROOT))
     if result.returncode != 0:
         raise RuntimeError(f"Export failed with code {result.returncode}")
-    print("  ✅ Export complete!\n")
+    print("  ✅ 导出完成!\n")
 
 
 def run_training(
@@ -192,12 +192,12 @@ def run_training(
 ) -> None:
     """Launch RL training in unitree_rl_mjlab."""
     print("=" * 60)
-    print("Step 3: Starting RL training...")
+    print("步骤 3: 正在启动 RL 训练...")
     print("=" * 60)
 
     train_script = Path(rl_root) / "scripts" / "train.py"
     if not train_script.exists():
-        raise FileNotFoundError(f"Training script not found: {train_script}")
+        raise FileNot找到Error(f"Training script not found: {train_script}")
 
     cmd = [
         sys.executable, str(train_script),
@@ -207,12 +207,12 @@ def run_training(
     if extra_args:
         cmd.extend(extra_args.split())
 
-    print(f"  Command: {' '.join(cmd)}")
-    print(f"  RL root: {rl_root}")
+    print(f"  命令: {' '.join(cmd)}")
+    print(f"  RL 根目录: {rl_root}")
     result = subprocess.run(cmd, cwd=rl_root)
     if result.returncode != 0:
         raise RuntimeError(f"Training failed with code {result.returncode}")
-    print("  ✅ Training complete!\n")
+    print("  ✅ 训练完成!\n")
 
 
 def main() -> None:
@@ -227,7 +227,7 @@ def main() -> None:
     # Determine NPZ path
     if args.npz:
         npz_path = str(Path(args.npz).resolve())
-        print(f"Using existing NPZ: {npz_path}")
+        print(f"使用已有 NPZ: {npz_path}")
     else:
         # Avoid double robot suffix (e.g. Form_1_stageii_g1 → Form_1_stageii_g1.npz, not Form_1_stageii_g1_g1.npz)
         motion_stem = args.motion_name
@@ -241,10 +241,10 @@ def main() -> None:
         # Step 1: Retarget (if CSV not provided)
         if args.csv:
             csv_path = str(Path(args.csv).resolve())
-            print(f"Using existing CSV: {csv_path}")
+            print(f"使用已有 CSV: {csv_path}")
         else:
             if not args.retarget_config or not args.keypoints:
-                print("Error: provide --csv, --npz, or both --retarget-config + --keypoints")
+                print("错误: 请提供 --csv、--npz 或同时提供 --retarget-config + --keypoints")
                 sys.exit(1)
             csv_path = str(PROJECT_ROOT / "output_data" / "robot_motion" / f"{npz_stem}.csv")
             run_retarget(args.retarget_config, args.keypoints, csv_path)
@@ -254,18 +254,18 @@ def main() -> None:
 
     # Step 3: Train (unless --export-only)
     if args.export_only:
-        print("✅ Export-only mode, skipping training.")
-        print(f"NPZ file: {npz_path}")
-        print(f"\nTo train manually:")
+        print("✅ 仅导出模式，跳过训练。")
+        print(f"NPZ 文件: {npz_path}")
+        print(f"\n手动训练:")
         print(f"  cd {rl_root}")
         print(f"  python scripts/train.py --task <TASK_ID> --motion-file {npz_path}")
     else:
         if not args.rl_task:
-            print("Error: --rl-task required for training (or use --export-only)")
+            print("错误: 训练需要 --rl-task（或使用 --export-only）")
             sys.exit(1)
         run_training(npz_path, args.rl_task, rl_root, args.train_args)
 
-    print("\n🎉 Pipeline complete!")
+    print("\n🎉 流水线完成!")
 
 
 if __name__ == "__main__":

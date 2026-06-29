@@ -142,7 +142,7 @@ def main() -> None:
 
     for src in src_files:
         if not src.exists():
-            print(f"[skip] missing: {src}")
+            print(f"[跳过] 缺失: {src}")
             continue
 
         if args.input_csv is not None:
@@ -153,7 +153,7 @@ def main() -> None:
         frames, joint_count = convert_one_file(src, dst, root_scale=args.root_scale)
         total_frames += frames
         total_files += 1
-        print(f"[ok] {src} -> {dst} | frames={frames}, joints={joint_count}")
+        print(f"[完成] {src} -> {dst} | 帧数={frames}, 关节数={joint_count}")
 
     print(f"done: files={total_files}, frames={total_frames}, output_root={args.output_root}")
 

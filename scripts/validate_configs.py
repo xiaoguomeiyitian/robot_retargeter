@@ -146,10 +146,10 @@ def main() -> None:
 
     yaml_files = sorted(CONFIG_DIR.glob("*.yaml"))
     if not yaml_files:
-        print(f"No YAML files found in {CONFIG_DIR}")
+        print(f"未在以下目录找到 YAML 文件: {CONFIG_DIR}")
         sys.exit(1)
 
-    print(f"Validating {len(yaml_files)} robot configs in {CONFIG_DIR} ...\n")
+    print(f"正在验证 {len(yaml_files)} 个机器人配置文件: {CONFIG_DIR} ...\n")
 
     all_ok = True
     for yaml_file in yaml_files:
@@ -165,19 +165,19 @@ def main() -> None:
     warnings = [(r, m) for r, l, m in issues if l == "WARN"]
 
     if warnings:
-        print(f"⚠️  {len(warnings)} warning(s):")
+        print(f"⚠️  {len(warnings)} 个警告::")
         for robot, msg in warnings:
             print(f"  [{robot}] {msg}")
         print()
 
     if errors:
-        print(f"❌ {len(errors)} error(s):")
+        print(f"❌ {len(errors)} 个错误::")
         for robot, msg in errors:
             print(f"  [{robot}] {msg}")
         print()
         sys.exit(1)
     else:
-        print(f"✅ All {len(yaml_files)} configs passed validation ({len(warnings)} warnings)")
+        print(f"✅ 全部 {len(yaml_files)} 个配置通过验证 ({len(warnings)} warnings)")
         sys.exit(0)
 
 

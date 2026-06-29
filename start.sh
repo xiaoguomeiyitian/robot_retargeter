@@ -171,25 +171,22 @@ get_motion_label_cn() {
 
 # ── Python 检测 ────────────────────────────────────────────────────────────
 detect_python() {
-    # 优先使用项目 .venv 中的 Python
+    # 仅使用项目 .venv 中的 Python
     local venv_python="$PROJECT_DIR/.venv/bin/python"
-    # 备选: 同级 trainBot 项目的 venv
-    local trainbot_venv="$(cd "$PROJECT_DIR/../trainBot" 2>/dev/null && pwd)/.venv/bin/python"
     if [[ -n "${PYTHON_BIN:-}" ]]; then
         : # 用户已显式指定
     elif [[ -x "$venv_python" ]]; then
         PYTHON_BIN="$venv_python"
         log_info "使用项目虚拟环境: $PYTHON_BIN"
-    elif [[ -x "$trainbot_venv" ]]; then
-        PYTHON_BIN="$trainbot_venv"
-        log_info "使用 trainBot 虚拟环境: $PYTHON_BIN"
-    elif command -v python >/dev/null 2>&1; then
-        PYTHON_BIN="$(command -v python)"
-    elif command -v python3 >/dev/null 2>&1; then
-        PYTHON_BIN="$(command -v python3)"
     else
-        log_error "未找到 Python 解释器，请手动设置 PYTHON_BIN"
-        exit 127
+        log_info "项目 .venv 不存在，正在创建..."
+        python3 -m venv "$PROJECT_DIR/.venv"
+        PYTHON_BIN="$venv_python"
+        log_info "虚拟环境已创建: $PYTHON_BIN"
+        log_info "正在安装依赖..."
+        "$PYTHON_BIN" -m pip install --upgrade pip -q
+        "$PYTHON_BIN" -m pip install -r requirements.txt -q
+        log_info "依赖安装完成"
     fi
 
     if ! "${PYTHON_BIN}" --version >/dev/null 2>&1; then

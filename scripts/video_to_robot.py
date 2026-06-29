@@ -31,9 +31,9 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.video_to_robot.video_extract import VideoExtractor
-from src.video_to_robot.lift_2d_to_3d import Lift2Dto3D
-from src.video_to_robot.fit_smplx import FitSMPLX
+from scripts.video_to_robot.video_extract import VideoExtractor
+from scripts.video_to_robot.lift_2d_to_3d import Lift2Dto3D
+from scripts.video_to_robot.fit_smplx import FitSMPLX
 
 
 def parse_args() -> argparse.Namespace:
@@ -159,7 +159,7 @@ def save_amass_npz(
         surface_model_type=np.array(surface_model_type),
         mocap_frame_rate=np.array(fps, dtype=np.float32),
     )
-    print(f"[INFO] Saved AMASS-format motion: {output_path}")
+    print(f"[信息] 已保存 AMASS 格式动作: {output_path}")
 
 
 def run_smpl_replay(
@@ -169,7 +169,7 @@ def run_smpl_replay(
     gender: str,
     no_viewer: bool = True,
 ) -> subprocess.CompletedProcess:
-    """Run smpl_replay.py to generate skeleton keypoints pkl."""
+    """运行 smpl_replay.py 生成骨骼关键点 pkl"""
     cmd = [
         sys.executable, str(PROJECT_ROOT / "scripts" / "smpl_replay.py"),
         "--motion_file", str(motion_file),
@@ -178,7 +178,7 @@ def run_smpl_replay(
         "--gender", gender,
         "--no-viewer",
     ]
-    print(f"[INFO] Running: {' '.join(cmd)}")
+    print(f"[信息] 正在运行: {' '.join(cmd)}")
     return subprocess.run(cmd, cwd=str(PROJECT_ROOT))
 
 
@@ -187,15 +187,16 @@ def run_robot_retarget(
     keypoints_name: str,
     no_viewer: bool = True,
 ) -> subprocess.CompletedProcess:
-    """Run robot_retarget.py to generate robot motion."""
+    """运行 robot_retarget.py 生成机器人动作"""
     cmd = [
         sys.executable, str(PROJECT_ROOT / "scripts" / "robot_retarget.py"),
         "--config", str(robot_config),
         "--keypoints-name", keypoints_name,
     ]
+    # robot_retarget.py 使用 --no-render-debug 关闭可视化
     if no_viewer:
-        cmd.append("--no-viewer")
-    print(f"[INFO] Running: {' '.join(cmd)}")
+        cmd.append("--no-render-debug")
+    print(f"[信息] 正在运行: {' '.join(cmd)}")
     return subprocess.run(cmd, cwd=str(PROJECT_ROOT))
 
 
@@ -204,7 +205,7 @@ def main() -> None:
 
     video_path = Path(args.video)
     if not video_path.exists():
-        print(f"[ERROR] Video not found: {video_path}")
+        print(f"[错误] 视频文件未找到: {video_path}")
         sys.exit(1)
 
     output_dir = Path(args.output_dir)
@@ -213,15 +214,15 @@ def main() -> None:
     video_stem = video_path.stem
 
     print("=" * 60)
-    print("  Video-to-Robot Pipeline")
+    print("  视频 → 机器人 重定向流水线")
     print("=" * 60)
-    print(f"  Video: {video_path}")
-    print(f"  Robots: {args.robots}")
-    print(f"  Output: {output_dir}")
+    print(f"  视频: {video_path}")
+    print(f"  目标机器人: {args.robots}")
+    print(f"  输出目录: {output_dir}")
     print()
 
-    # ── Step 1: Extract keypoints from video ──────────────────────────────
-    print("[Step 1/5] Extracting keypoints from video...")
+    # ── 步骤 1: 从视频提取关键点 ──────────────────────────────
+    print("[步骤 1/5] 正在从视频提取关键点...")
     t0 = time.time()
 
     extractor = VideoExtractor(model_path=args.model)
@@ -229,7 +230,7 @@ def main() -> None:
     kp3d_mediapipe_path = output_dir / f"{video_stem}_keypoints_3d_mediapipe.npy"
 
     if kp2d_path.exists() and kp3d_mediapipe_path.exists():
-        print(f"[INFO] Loading cached keypoints: {kp2d_path}")
+        print(f"[信息] 加载缓存的关键点: {kp2d_path}")
         keypoints_2d = np.load(kp2d_path)
         keypoints_3d_mediapipe = np.load(kp3d_mediapipe_path)
         meta_path = output_dir / f"{video_stem}_meta.json"
@@ -256,32 +257,32 @@ def main() -> None:
     if args.fps is not None:
         video_fps = args.fps
 
-    print(f"[INFO] 2D keypoints: {keypoints_2d.shape}")
-    print(f"[INFO] 3D MediaPipe: {keypoints_3d_mediapipe.shape}")
-    print(f"[INFO] FPS: {video_fps}")
-    print(f"[INFO] Time: {time.time() - t0:.2f}s")
+    print(f"[信息] 2D 关键点形状: {keypoints_2d.shape}")
+    print(f"[信息] 3D MediaPipe 关键点形状: {keypoints_3d_mediapipe.shape}")
+    print(f"[信息] 帧率: {video_fps} fps")
+    print(f"[信息] 耗时: {time.time() - t0:.2f}s")
     print()
 
-    # ── Step 2: Lift 2D to 3D ────────────────────────────────────────────
-    print("[Step 2/5] Lifting 2D keypoints to 3D...")
+    # ── 步骤 2: 将 2D 关键点提升为 3D ─────────────────────────
+    print("[步骤 2/5] 正在将 2D 关键点提升为 3D...")
     t0 = time.time()
 
     lifter = Lift2Dto3D(method=args.lift_method)
     kp3d_path = output_dir / f"{video_stem}_keypoints_3d.npy"
 
     if kp3d_path.exists():
-        print(f"[INFO] Loading cached 3D keypoints: {kp3d_path}")
+        print(f"[信息] 加载缓存的 3D 关键点: {kp3d_path}")
         keypoints_3d = np.load(kp3d_path)
     else:
         keypoints_3d = lifter.lift(keypoints_2d, keypoints_3d_mediapipe)
         np.save(kp3d_path, keypoints_3d)
 
-    print(f"[INFO] 3D keypoints: {keypoints_3d.shape}")
-    print(f"[INFO] Time: {time.time() - t0:.2f}s")
+    print(f"[信息] 3D 关键点形状: {keypoints_3d.shape}")
+    print(f"[信息] 耗时: {time.time() - t0:.2f}s")
     print()
 
-    # ── Step 3: Fit SMPL-X → AMASS NPZ ──────────────────────────────────
-    print("[Step 3/5] Fitting SMPL-X body model...")
+    # ── 步骤 3: 拟合 SMPL-X 身体模型 ──────────────────────────
+    print("[步骤 3/5] 正在拟合 SMPL-X 身体模型...")
     t0 = time.time()
 
     fitter = FitSMPLX(
@@ -291,7 +292,7 @@ def main() -> None:
     smplx_npz_path = output_dir / f"{video_stem}_smplx.npz"
 
     if smplx_npz_path.exists():
-        print(f"[INFO] Loading cached SMPL-X: {smplx_npz_path}")
+        print(f"[信息] 加载缓存的 SMPL-X: {smplx_npz_path}")
         cached = np.load(smplx_npz_path)
         root_pos = cached["trans"]
         root_rot = cached["root_orient"]
@@ -312,18 +313,18 @@ def main() -> None:
             gender=args.gender,
         )
 
-    print(f"[INFO] SMPL-X motion: {smplx_npz_path}")
-    print(f"[INFO] Time: {time.time() - t0:.2f}s")
+    print(f"[信息] SMPL-X 动作文件: {smplx_npz_path}")
+    print(f"[信息] 耗时: {time.time() - t0:.2f}s")
     print()
 
     # ── Step 4: Run smpl_replay.py ───────────────────────────────────────
     first_robot = args.robots[0]
     robot_config_path = PROJECT_ROOT / "config" / "robot" / f"{first_robot}.yaml"
     if not robot_config_path.exists():
-        print(f"[WARN] Robot config not found: {robot_config_path}")
-        print("[WARN] Skipping smpl_replay.py and robot_retarget.py")
+        print(f"[警告] 机器人配置未找到: {robot_config_path}")
+        print("[警告] 跳过 smpl_replay.py 和 robot_retarget.py")
     else:
-        print("[Step 4/5] Running smpl_replay.py...")
+        print("[步骤 4/5] 正在运行 smpl_replay.py...")
         t0 = time.time()
 
         smpl_model_path = Path(args.smplx_model_dir)
@@ -335,13 +336,13 @@ def main() -> None:
             no_viewer=args.no_viewer,
         )
         if result.returncode != 0:
-            print(f"[WARN] smpl_replay.py returned code {result.returncode}")
-        print(f"[INFO] Time: {time.time() - t0:.2f}s")
+            print(f"[警告] smpl_replay.py 返回码: {result.returncode}")
+        print(f"[信息] 耗时: {time.time() - t0:.2f}s")
         print()
 
         # ── Step 5: Run robot_retarget.py ─────────────────────────────────
         if not args.skip_retarget:
-            print("[Step 5/5] Running robot_retarget.py...")
+            print("[步骤 5/5] 正在运行 robot_retarget.py...")
             t0 = time.time()
 
             keypoints_name = smplx_npz_path.stem
@@ -349,7 +350,7 @@ def main() -> None:
             for robot in args.robots:
                 robot_cfg = PROJECT_ROOT / "config" / "robot" / f"{robot}.yaml"
                 if not robot_cfg.exists():
-                    print(f"[WARN] Robot config not found: {robot_cfg}")
+                    print(f"[警告] 机器人配置未找到: {robot_cfg}")
                     continue
 
                 result = run_robot_retarget(
@@ -358,22 +359,22 @@ def main() -> None:
                     no_viewer=args.no_viewer,
                 )
                 if result.returncode != 0:
-                    print(f"[WARN] robot_retarget.py returned code {result.returncode} for {robot}")
+                    print(f"[警告] robot_retarget.py 返回码: {result.returncode} (机器人: {robot})")
 
-            print(f"[INFO] Time: {time.time() - t0:.2f}s")
+            print(f"[信息] 耗时: {time.time() - t0:.2f}s")
         else:
-            print("[Step 5/5] Skipped (--skip-retarget)")
+            print("[步骤 5/5] 已跳过 (--skip-retarget)")
 
     # ── Summary ──────────────────────────────────────────────────────────
     print()
     print("=" * 60)
-    print("  Pipeline Complete!")
+    print("  流水线完成!")
     print("=" * 60)
-    print(f"  Output directory: {output_dir}")
-    print(f"  SMPL-X motion: {smplx_npz_path.name}")
+    print(f"  输出目录: {output_dir}")
+    print(f"  SMPL-X 动作: {smplx_npz_path.name}")
     if not args.skip_retarget:
-        print(f"  Keypoints name: {smplx_npz_path.stem}")
-    print(f"  Robots: {args.robots}")
+        print(f"  关键点名称: {smplx_npz_path.stem}")
+    print(f"  目标机器人: {args.robots}")
     print()
 
 

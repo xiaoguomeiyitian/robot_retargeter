@@ -217,7 +217,7 @@ def load_robot_xml(robot_name: str) -> str:
         if robot_name == "g1_23dof":
             config_path = CONFIG_DIR / "g1.yaml"
         else:
-            raise FileNotFoundError(f"Robot config not found: {config_path}")
+            raise FileNot找到Error(f"Robot config not found: {config_path}")
     import yaml
     with open(config_path, "r", encoding="utf-8") as f:
         config = yaml.safe_load(f)
@@ -323,13 +323,13 @@ def export_csv_to_npz(
     output_fps: float = 50.0,
 ) -> None:
     """Convert a single CSV to NPZ."""
-    print(f"Loading CSV: {csv_path}")
+    print(f"  加载 CSV: {csv_path}")
     motion = np.loadtxt(csv_path, delimiter=",")
     if motion.ndim == 1:
         motion = motion[None, :]
 
     input_frames = motion.shape[0]
-    print(f"  Input: {input_frames} frames @ {input_fps} fps")
+    print(f"  输入: {input_frames} 帧 @ {input_fps} fps")
 
     # Parse CSV: xyz(3) + quat_xyzw(4) + joints(N)
     base_pos = motion[:, :3].copy()
@@ -338,17 +338,17 @@ def export_csv_to_npz(
     joint_pos_raw = motion[:, 7:]
 
     # Resample to output fps
-    print(f"  Resampling: {input_fps} fps → {output_fps} fps")
+    print(f"  重采样: {input_fps} fps → {output_fps} fps")
     resampled_pos, resampled_rot, resampled_joints = resample_motion(
         base_pos, base_rot_xyzw, joint_pos_raw, input_fps, output_fps
     )
     output_frames = resampled_pos.shape[0]
     output_dt = 1.0 / output_fps
-    print(f"  Output: {output_frames} frames @ {output_fps} fps")
+    print(f"  输出: {output_frames} frames @ {output_fps} fps")
 
     # Load robot model for forward kinematics
     xml_path = load_robot_xml(robot_name)
-    print(f"  Robot model: {xml_path}")
+    print(f"  机器人模型: {xml_path}")
     model = mujoco.MjModel.from_xml_path(xml_path)
     data = mujoco.MjData(model)
 
@@ -361,7 +361,7 @@ def export_csv_to_npz(
     for name in body_names:
         idx = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, name)
         if idx < 0:
-            print(f"  [WARN] Body '{name}' not found in model, using root")
+            print(f"  [警告] 体 '{name}' 未在模型中找到，使用根节点")
             idx = 0
         body_indices.append(idx)
     body_indices = np.array(body_indices)
@@ -376,7 +376,7 @@ def export_csv_to_npz(
         qpos_adr = model.jnt_qposadr[jid]
         joint_qpos_start.append(qpos_adr)
 
-    # Allocate output arrays
+    # 全部ocate output arrays
     # NOTE: MotionLoader 使用 body_indexes 对 body_pos_w 做 fancy indexing:
     #   self.body_pos_w = self._body_pos_w[:, self._body_indexes]
     # 因此 body_pos_w 的维度 1 必须是模型 body 总数（而非 tracking 任务的
@@ -386,7 +386,7 @@ def export_csv_to_npz(
     body_pos_all = np.zeros((output_frames, num_model_bodies, 3), dtype=np.float32)
     body_quat_all = np.zeros((output_frames, num_model_bodies, 4), dtype=np.float32)
 
-    print(f"  Running forward kinematics...")
+    print(f"  正在执行正向运动学...")
     for t in range(output_frames):
         # Set root state
         data.qpos[:3] = resampled_pos[t]
@@ -413,7 +413,7 @@ def export_csv_to_npz(
             body_quat_all[t, b] = data.xquat[b + 1]  # wxyz
 
     # Compute velocities
-    print(f"  Computing velocities...")
+    print(f"  正在计算速度...")
     base_lin_vel, base_ang_vel, joint_vel = compute_velocities(
         resampled_pos, resampled_rot, resampled_joints, output_dt
     )
@@ -462,8 +462,8 @@ def export_csv_to_npz(
         body_lin_vel_w=body_lin_vel.astype(np.float32),
         body_ang_vel_w=body_ang_vel.astype(np.float32),
     )
-    print(f"  Saved: {output_path}")
-    print(f"  Shapes: joint_pos={joint_pos_all.shape}, body_pos_w={body_pos_all.shape}")
+    print(f"  已保存: {output_path}")
+    print(f"  形状: joint_pos={joint_pos_all.shape}, body_pos_w={body_pos_all.shape}")
 
 
 def main() -> None:
@@ -487,9 +487,9 @@ def main() -> None:
         output_dir = args.output_dir or str(PROJECT_ROOT / "output_data" / "npz" / args.robot)
         csv_files = sorted(Path(args.csv_dir).glob(args.pattern))
         if not csv_files:
-            print(f"No CSV files matching '{args.pattern}' in {args.csv_dir}")
+            print(f"未找到匹配的 CSV 文件 '{args.pattern}' in {args.csv_dir}")
             sys.exit(1)
-        print(f"Found {len(csv_files)} CSV files to convert")
+        print(f"找到 {len(csv_files)} 个 CSV 文件待转换")
         for csv_file in csv_files:
             output_name = csv_file.stem + ".npz"
             output_path = os.path.join(output_dir, output_name)
@@ -501,10 +501,10 @@ def main() -> None:
                 output_fps=args.output_fps,
             )
     else:
-        print("Error: specify --csv or --csv-dir")
+        print("错误: 请指定 --csv 或 --csv-dir")
         sys.exit(1)
 
-    print("\n✅ Export complete!")
+    print("\n✅ 导出完成!")
 
 
 if __name__ == "__main__":

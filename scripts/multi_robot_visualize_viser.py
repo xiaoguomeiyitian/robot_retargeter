@@ -83,6 +83,7 @@ ROBOT_LABELS_CN = {
     "hightorque_hi": "高力矩 HI",
     "hightorque_pi": "高力矩 PI",
     "jaka_pi": "Jaka PI",
+    "kuavo": "酷娃",
     "limx_oli": "LIMX OLI",
     "noetix_e1": "Noetix E1",
     "noetix_n2": "Noetix N2",
@@ -147,7 +148,7 @@ def get_robot_xml(robot: str) -> str:
         base_robot = robot.split("__")[0]
         fallback_path = os.path.join(ROBOT_CONFIG_DIR, f"{base_robot}.yaml")
         if os.path.isfile(fallback_path):
-            print(f"[WARN] No config for '{robot}', falling back to '{base_robot}'")
+            print(f"[警告] 未找到 '{robot}' 的配置，回退到 '{base_robot}'")
             config_path = fallback_path
         else:
             raise FileNotFoundError(f"Robot config not found: {config_path}")
@@ -648,8 +649,8 @@ class MultiRobotViserApp:
         if hasattr(self, 'gui_frame'):
             self.gui_frame.max = max(1, self.n_frames - 1)
 
-        print(f"[rebuild] {len(self.active_robots)} robots, {self.n_frames} frames, "
-              f"{len(self.batched_handles)} mesh groups")
+        print(f"[rebuild] {len(self.active_robots)} 个机器人, {self.n_frames} 帧, "
+              f"{len(self.batched_handles)} 个网格组")
 
         # Update frame slider range (unified location)
         if hasattr(self, 'gui_frame'):
@@ -786,10 +787,10 @@ class MultiRobotViserApp:
             output_path = os.path.join(out_dir, f"viser_frame_{ts}.png")
             cv2.imwrite(output_path, cv2.cvtColor(img, cv2.COLOR_RGBA2BGR))
             self.gui_record_status.value = f"帧已保存: {output_path}"
-            print(f"[Export] Frame saved to {output_path}")
+            print(f"[导出] 帧已保存到 {output_path}")
         except Exception as e:
             self.gui_record_status.value = f"错误: {e}"
-            print(f"[Export] Error: {e}")
+            print(f"[导出] 错误: {e}")
 
     def _start_recording(self) -> None:
         """Start recording video by capturing browser frames via viser's get_render API."""
@@ -804,7 +805,7 @@ class MultiRobotViserApp:
 
         self._record_thread = threading.Thread(target=self._record_loop, daemon=True)
         self._record_thread.start()
-        print(f"[Recording] Started, saving frames to {self.record_dir}")
+        print(f"[录制] 已开始，正在保存帧到 {self.record_dir}")
 
     def _stop_recording(self) -> None:
         """Stop recording and encode video with OpenCV."""
@@ -905,7 +906,7 @@ class MultiRobotViserApp:
             size_mb = os.path.getsize(output_path) / (1024 * 1024)
             msg = f"视频已保存: {output_path}\n({size_mb:.1f} MB, {self.record_frame_count} 帧)"
             self.gui_record_status.value = msg
-            print(f"[Recording] {msg}")
+            print(f"[录制] {msg}")
         except Exception as e:
             writer.release()
             self.gui_record_status.value = f"错误: {e}"
@@ -965,17 +966,17 @@ class MultiRobotViserApp:
             csv_path = self._find_csv_in_data_dirs(motion, rtype)
             qpos = load_motion(csv_path)
         except FileNotFoundError as e:
-            print(f"[warn] {e}")
+            print(f"[警告] {e}")
             return
         key = self._generate_key(rtype)
         inst = RobotInstance(robot_type=rtype, motion_name=motion, key=key, qpos_data=qpos)
         self.pending_robots.append(inst)
         self._update_pending_gui()
-        print(f"[pending] Added {key} ({motion}), total pending: {len(self.pending_robots)}")
+        print(f"[待添加] 已添加 {key} ({motion})，待添加总数: {len(self.pending_robots)}")
 
     def _apply_changes(self) -> None:
         if not self.pending_robots:
-            print("[apply] No pending changes")
+            print("[应用] 无待处理的更改")
             return
         with self._rebuild_lock:
             self.active_robots.extend(self.pending_robots)
@@ -985,12 +986,12 @@ class MultiRobotViserApp:
             self._update_pending_gui()
             self._update_active_gui()
             self._rebuild_remove_buttons()
-            print(f"[apply] Scene updated: {len(self.active_robots)} robots active")
+            print(f"[应用] 场景已更新: {len(self.active_robots)} 个机器人处于活动状态")
 
     def _clear_pending(self) -> None:
         self.pending_robots.clear()
         self._update_pending_gui()
-        print("[clear] Pending list cleared")
+        print("[清空] 待添加列表已清空")
 
     def _remove_active(self, key: str) -> None:
         with self._rebuild_lock:
@@ -998,7 +999,7 @@ class MultiRobotViserApp:
             self._rebuild()
             self._update_active_gui()
             self._rebuild_remove_buttons()
-            print(f"[remove] Removed {key}, {len(self.active_robots)} robots remaining")
+            print(f"[移除] 已移除 {key}，剩余 {len(self.active_robots)} 个机器人")
 
     # ── GUI update helpers ───────────────────────────────────────────
     def _update_pending_gui(self) -> None:
@@ -1083,11 +1084,11 @@ class MultiRobotViserApp:
     # ── Main loop ───────────────────────────────────────────────────
     def run(self) -> None:
         n_active = len(self.active_robots)
-        print(f"source_fps={self.args.source_fps:g}, render_fps≈{self.args.source_fps / self.step:g}, "
-              f"render_every={self.step} frame(s)")
-        print(f"Open browser at: http://localhost:{self.args.port}")
+        print(f"源帧率={self.args.source_fps:g}, 渲染帧率≈{self.args.source_fps / self.step:g}, "
+              f"每 {self.step} 帧渲染一次")
+        print(f"请在浏览器中打开: http://localhost:{self.args.port}")
         if n_active == 0:
-            print("No robots loaded — use the browser GUI to add robots dynamically.")
+            print("未加载机器人 — 请在浏览器界面中动态添加机器人。")
 
         # Ground plane — already added in __init__ (skip if --no-ground)
 

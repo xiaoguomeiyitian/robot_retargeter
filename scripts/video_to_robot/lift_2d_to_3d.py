@@ -6,7 +6,7 @@ This module provides:
   - Optional: VideoPose3D-style lifting (if available)
 
 Usage:
-    from src.video_to_robot import Lift2Dto3D
+    from scripts.video_to_robot import Lift2Dto3D
 
     lifter = Lift2Dto3D()
     keypoints_3d = lifter.lift(keypoints_2d)
@@ -57,7 +57,7 @@ class Lift2Dto3D:
         """Initialize VideoPose3D model (placeholder for future integration)."""
         # VideoPose3D requires PyTorch model weights
         # For now, fall back to simple method
-        print("[WARN] VideoPose3D model not available, falling back to 'simple' method")
+        print("[警告] VideoPose3D 模型不可用，回退到 'simple' 方法")
         self.method = "simple"
 
     def lift(
@@ -225,5 +225,5 @@ class Lift2Dto3D:
         """
         keypoints_3d = self.lift(keypoints_2d, keypoints_3d_mediapipe)
         np.save(output_path, keypoints_3d)
-        print(f"[INFO] Saved 3D keypoints: {output_path}")
+        print(f"[信息] 已保存 3D 关键点: {output_path}")
         return keypoints_3d

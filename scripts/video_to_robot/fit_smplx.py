@@ -5,7 +5,7 @@ This module provides:
   - Output SMPL-X parameters compatible with robot_retargeter's smpl_replay.py
 
 Usage:
-    from src.video_to_robot import FitSMPLX
+    from scripts.video_to_robot import FitSMPLX
 
     fitter = FitSMPLX(smplx_model_dir="asset/smplx")
     smpl_params = fitter.fit(keypoints_3d, fps=30)
@@ -112,16 +112,28 @@ class FitSMPLX:
         """Initialize the SMPL-X model."""
         model_path = Path(self.smplx_model_dir)
         if not model_path.exists():
-            print(f"[WARN] SMPL-X model dir not found: {model_path}")
-            print("[WARN] SMPL-X fitting will not be available")
+            print(f"[警告] SMPL-X 模型目录未找到: {model_path}")
+            print("[警告] SMPL-X 拟合将不可用")
             self.model = None
             return
 
         try:
             import torch
             device = "cuda" if torch.cuda.is_available() else "cpu"
+            # smplx.create() appends model_type internally, so we need
+            # the parent of the directory containing model files.
+            expected_file = model_path / "SMPLX_{}.npz".format(self.gender.upper())
+            if expected_file.exists():
+                smplx_parent = model_path.parent
+            else:
+                # Try model_path / model_type subdirectory
+                alt = model_path / "smplx"
+                if (alt / "SMPLX_{}.npz".format(self.gender.upper())).exists():
+                    smplx_parent = model_path
+                else:
+                    smplx_parent = model_path
             self.model = smplx.create(
-                model_path=str(model_path),
+                model_path=str(smplx_parent),
                 model_type="smplx",
                 gender=self.gender,
                 use_pca=self.use_pca,
@@ -129,9 +141,9 @@ class FitSMPLX:
                 device=device,
             )
             self.device = device
-            print(f"[INFO] SMPL-X model loaded (gender={self.gender}, device={device})")
+            print(f"[信息] SMPL-X 模型已加载 (性别={self.gender}, 设备={device})")
         except Exception as e:
-            print(f"[WARN] Failed to load SMPL-X model: {e}")
+            print(f"[警告] SMPL-X 模型加载失败: {e}")
             self.model = None
 
     def fit(
@@ -158,13 +170,13 @@ class FitSMPLX:
                 - fps: frame rate
         """
         if self.model is None:
-            print("[WARN] SMPL-X model not available, using simple IK fitting")
+            print("[警告] SMPL-X 模型不可用，使用简单 IK 拟合")
             return self._fit_simple_ik(keypoints_3d, fps)
 
         import torch
 
         n_frames = keypoints_3d.shape[0]
-        print(f"[INFO] Fitting SMPL-X to {n_frames} frames...")
+        print(f"[信息] 正在拟合 SMPL-X，共 {n_frames} 帧...")
 
         # Initialize parameters
         body_pose = torch.zeros(n_frames, 21, 3, device=self.device)
@@ -217,7 +229,7 @@ class FitSMPLX:
             betas[frame_idx] = be.detach()
 
             if (frame_idx + 1) % 100 == 0:
-                print(f"[INFO] Fitted {frame_idx + 1}/{n_frames} frames")
+                print(f"[信息] 已拟合 {frame_idx + 1}/{n_frames} 帧")
 
         return {
             "body_pose": body_pose.cpu().numpy(),
@@ -245,7 +257,7 @@ class FitSMPLX:
             Dictionary with simplified motion parameters.
         """
         n_frames = keypoints_3d.shape[0]
-        print(f"[INFO] Simple IK fitting for {n_frames} frames")
+        print(f"[信息] 简单 IK 拟合，共 {n_frames} 帧")
 
         # Compute joint angles from keypoint positions
         # This is a simplified approach that directly uses keypoint positions
@@ -315,5 +327,5 @@ class FitSMPLX:
                 save_dict[key] = np.array(value)
 
         np.savez(output_path, **save_dict)
-        print(f"[INFO] Saved SMPL-X parameters: {output_path}")
+        print(f"[信息] 已保存 SMPL-X 参数: {output_path}")
         return output_path

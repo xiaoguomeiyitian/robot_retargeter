@@ -6,7 +6,7 @@ This module provides:
   - Outputs COCO-format 2D keypoints and MediaPipe 3D landmarks
 
 Usage:
-    from src.video_to_robot import VideoExtractor
+    from scripts.video_to_robot import VideoExtractor
 
     extractor = VideoExtractor()
     keypoints_2d, keypoints_3d, fps = extractor.extract("path/to/video.mp4")
@@ -162,8 +162,8 @@ class VideoExtractor:
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
-        print(f"[INFO] Video: {video_path.name}")
-        print(f"[INFO] Resolution: {width}x{height}, FPS: {fps}, Total frames: {total_frames}")
+        print(f"[信息] 视频: {video_path.name}")
+        print(f"[信息] 分辨率: {width}x{height}, 帧率: {fps}, 总帧数: {total_frames}")
 
         if max_frames is not None:
             total_frames = min(total_frames, max_frames)
@@ -201,8 +201,9 @@ class VideoExtractor:
                     )
 
                     # Extract COCO 17 keypoints (2D)
+                    # MEDIAPIPE_TO_COCO_17: key=MediaPipe index, value=COCO index
                     kp_2d = np.zeros((17, 3), dtype=np.float32)
-                    for coco_idx, mp_idx in MEDIAPIPE_TO_COCO_17.items():
+                    for mp_idx, coco_idx in MEDIAPIPE_TO_COCO_17.items():
                         lm = landmarks[mp_idx]
                         kp_2d[coco_idx] = [lm.x, lm.y, lm.visibility]
 
@@ -217,20 +218,20 @@ class VideoExtractor:
 
                 frame_idx += 1
                 if frame_idx % 100 == 0:
-                    print(f"[INFO] Processed {frame_idx}/{total_frames} frames")
+                    print(f"[信息] 已处理 {frame_idx}/{total_frames} 帧")
 
         finally:
             cap.release()
 
         if not keypoints_2d_list:
-            raise RuntimeError(f"No person detected in video: {video_path}")
+            raise RuntimeError(f"视频中未检测到人体: {video_path}")
 
         keypoints_2d = np.stack(keypoints_2d_list, axis=0)  # (N, 17, 3)
         keypoints_3d = np.stack(keypoints_3d_list, axis=0)  # (N, 33, 4)
 
-        print(f"[INFO] Extracted {len(keypoints_2d_list)} frames")
-        print(f"[INFO] 2D keypoints shape: {keypoints_2d.shape}")
-        print(f"[INFO] 3D keypoints shape: {keypoints_3d.shape}")
+        print(f"[信息] 已提取 {len(keypoints_2d_list)} 帧")
+        print(f"[信息] 2D 关键点形状: {keypoints_2d.shape}")
+        print(f"[信息] 3D 关键点形状: {keypoints_3d.shape}")
 
         return keypoints_2d, keypoints_3d, fps
 
@@ -275,8 +276,8 @@ class VideoExtractor:
         with open(meta_path, "w") as f:
             json.dump(meta, f, indent=2)
 
-        print(f"[INFO] Saved 2D keypoints: {kp2d_path}")
-        print(f"[INFO] Saved 3D keypoints: {kp3d_path}")
-        print(f"[INFO] Saved metadata: {meta_path}")
+        print(f"[信息] 已保存 2D 关键点: {kp2d_path}")
+        print(f"[信息] 已保存 3D 关键点: {kp3d_path}")
+        print(f"[信息] 已保存元数据: {meta_path}")
 
         return kp2d_path, kp3d_path, fps

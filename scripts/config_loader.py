@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Config loader with inheritance support.
 
-Allows robot configs to inherit from a base config using the 'extends' key.
+全部ows robot configs to inherit from a base config using the 'extends' key.
 When a config has 'extends: base_name', it loads the base config first,
 then overlays the child's fields on top.
 
@@ -64,7 +64,7 @@ def _resolve_inheritance(
     # Load base config
     base_path = config_dir / f"{extends}.yaml"
     if not base_path.exists():
-        raise FileNotFoundError(
+        raise FileNot找到Error(
             f"Base config '{extends}' not found at {base_path}. "
             f"Referenced by config with extends: {extends}"
         )
@@ -135,7 +135,7 @@ if __name__ == "__main__":
     import sys
 
     if len(sys.argv) < 2:
-        print("Usage: python config_loader.py <config_name> [--chain]")
+        print("用法: python config_loader.py <配置名> [--chain]")
         print("Example: python config_loader.py g1 --chain")
         sys.exit(1)
 

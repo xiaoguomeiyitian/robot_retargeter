@@ -273,10 +273,8 @@ class RobotRetarget:
 
         if len(self.contact_body_names) != len(self.contact_names):
             if self.verbose:
-                print(
-                    "[contact target] skip: robot contact_links count "
-                    f"{len(self.contact_body_names)} != keypoint contact_names count {len(self.contact_names)}"
-                )
+                print("[接触目标] 跳过: 机器人接触连杆数量 "
+                    f"{len(self.contact_body_names)} != 关键点接触名称数量 {len(self.contact_names)}")
             return
 
         for body_name, contact_name in zip(self.contact_body_names, self.contact_names):
@@ -287,7 +285,7 @@ class RobotRetarget:
             source_keypoint_name = self._resolve_body_source_keypoint(body_name)
             if source_keypoint_name is None:
                 if self.verbose:
-                    print(f"[contact target] could not find a source keypoint for {body_name}")
+                    print(f"[接触目标] 无法找到 {body_name} 的源关键点")
                 continue
 
             task = self._ensure_contact_task(body_name)
@@ -310,7 +308,7 @@ class RobotRetarget:
                 f"{item['contact_name']}->{item['body_name']} (src={item['source_keypoint_name']})"
                 for item in self.contact_targets
             ]
-            print(f"[contact target] enabled: {summary}")
+            print(f"[接触目标] 已启用: {summary}")
 
     def _resolve_body_source_keypoint(self, body_name):
         if body_name in self.keypoint_name_to_idx:
@@ -411,23 +409,23 @@ class RobotRetarget:
                         f"joints_limit_offset_degrees['{key}'] must be two values [lower, upper], "
                         f"got {offset_deg}"
                     )
-                lower_offset_rad = np.radians(float(offset_deg[0]))
-                upper_offset_rad = np.radians(float(offset_deg[1]))
+                lower_offset_弧度 = np.弧度ians(float(offset_deg[0]))
+                upper_offset_弧度 = np.弧度ians(float(offset_deg[1]))
             else:
-                lower_offset_rad = np.radians(float(offset_deg))
-                upper_offset_rad = 0.0
+                lower_offset_弧度 = np.弧度ians(float(offset_deg))
+                upper_offset_弧度 = 0.0
 
-            if lower_offset_rad == 0.0 and upper_offset_rad == 0.0:
+            if lower_offset_弧度 == 0.0 and upper_offset_弧度 == 0.0:
                 continue
             matched = [(jid, name) for jid, name in all_joint_names if key in name]
             if not matched:
                 if self.verbose:
-                    print(f"[joint limit] no matching joint found: {key}")
+                    print(f"[关节限位] 未找到匹配的关节: {key}")
                 continue
             for joint_id, joint_name in matched:
                 lower, upper = self.model.jnt_range[joint_id]
-                new_lower = lower + lower_offset_rad
-                new_upper = upper + upper_offset_rad
+                new_lower = lower + lower_offset_弧度
+                new_upper = upper + upper_offset_弧度
                 # Ensure the lower bound does not exceed the upper bound
                 if new_lower > new_upper:
                     new_lower, new_upper = new_upper, new_lower
@@ -435,8 +433,8 @@ class RobotRetarget:
                 self.model.jnt_range[joint_id, 1] = new_upper
                 if self.verbose:
                     print(
-                        f"[joint limit] {joint_name} range: "
-                        f"[{lower:.4f}, {upper:.4f}] -> [{new_lower:.4f}, {new_upper:.4f}] rad"
+                        f"[关节限位] {joint_name} 范围: "
+                        f"[{lower:.4f}, {upper:.4f}] -> [{new_lower:.4f}, {new_upper:.4f}] 弧度"
                     )
  
     def update_targets(self, frame_idx):
@@ -478,7 +476,7 @@ class RobotRetarget:
         )
     
     def _draw_pose(self, scene, pos, quat_wxyz, point_rgba, axis_alpha=1.0,
-                   point_radius=0.035, axis_radius=0.005, axis_length=0.08):
+                   point_弧度ius=0.035, axis_弧度ius=0.005, axis_length=0.08):
         """Draw a pose in the scene: one small sphere + red/green/blue (XYZ) axes. Returns whether it succeeded."""
         max_geoms = len(scene.geoms)
         if scene.ngeom + 4 > max_geoms:
@@ -496,7 +494,7 @@ class RobotRetarget:
         mujoco.mjv_initGeom(
             scene.geoms[scene.ngeom],
             mujoco.mjtGeom.mjGEOM_SPHERE,
-            np.array([point_radius, point_radius, point_radius], dtype=np.float64),
+            np.array([point_弧度ius, point_弧度ius, point_弧度ius], dtype=np.float64),
             pos,
             identity_mat,
             np.asarray(point_rgba, dtype=np.float32),
@@ -520,7 +518,7 @@ class RobotRetarget:
             mujoco.mjv_initGeom(
                 scene.geoms[scene.ngeom],
                 mujoco.mjtGeom.mjGEOM_CYLINDER,
-                np.array([axis_radius, 0.5 * axis_length, 0.0], dtype=np.float64),
+                np.array([axis_弧度ius, 0.5 * axis_length, 0.0], dtype=np.float64),
                 center,
                 axis_world_rot.reshape(-1),
                 axis_colors[axis_idx],
@@ -528,7 +526,7 @@ class RobotRetarget:
             scene.ngeom += 1
         return True
 
-    def _draw_point(self, scene, pos, point_rgba, point_radius=0.04):
+    def _draw_point(self, scene, pos, point_rgba, point_弧度ius=0.04):
         """Draw only a single spherical point in the scene."""
         max_geoms = len(scene.geoms)
         if scene.ngeom + 1 > max_geoms:
@@ -539,7 +537,7 @@ class RobotRetarget:
         mujoco.mjv_initGeom(
             scene.geoms[scene.ngeom],
             mujoco.mjtGeom.mjGEOM_SPHERE,
-            np.array([point_radius, point_radius, point_radius], dtype=np.float64),
+            np.array([point_弧度ius, point_弧度ius, point_弧度ius], dtype=np.float64),
             pos,
             identity_mat,
             np.asarray(point_rgba, dtype=np.float32),
@@ -547,7 +545,7 @@ class RobotRetarget:
         scene.ngeom += 1
         return True
 
-    def draw_target_keypoints(self, viewer, point_radius=0.035, axis_radius=0.005, axis_length=0.08, targets=None):
+    def draw_target_keypoints(self, viewer, point_弧度ius=0.035, axis_弧度ius=0.005, axis_length=0.08, targets=None):
         """Draw the positions and axes of the target keypoints and the corresponding robot bodies.
 
         - Target keypoint: yellow sphere + full-brightness axes.
@@ -588,14 +586,14 @@ class RobotRetarget:
                     # Zero orientation weight: show only the sphere, no axes
                     if not self._draw_point(
                         scene, target_pos, target_rgba,
-                        point_radius=point_radius,
+                        point_弧度ius=point_弧度ius,
                     ):
                         break
                 else:
                     if not self._draw_pose(
                         scene, target_pos, target_quat_wxyz, target_rgba,
                         axis_alpha=1.0,
-                        point_radius=point_radius, axis_radius=axis_radius, axis_length=axis_length,
+                        point_弧度ius=point_弧度ius, axis_弧度ius=axis_弧度ius, axis_length=axis_length,
                     ):
                         break
 
@@ -610,7 +608,7 @@ class RobotRetarget:
             if not self._draw_pose(
                 scene, body_pos, body_quat, robot_rgba,
                 axis_alpha=0.5,
-                point_radius=point_radius, axis_radius=axis_radius, axis_length=axis_length,
+                point_弧度ius=point_弧度ius, axis_弧度ius=axis_弧度ius, axis_length=axis_length,
             ):
                 break
 
@@ -620,7 +618,7 @@ class RobotRetarget:
                 scene,
                 contact_pos,
                 contact_rgba,
-                point_radius=max(point_radius * 1.5, 0.02),
+                point_弧度ius=max(point_弧度ius * 1.5, 0.02),
             ):
                 break
     
@@ -633,7 +631,7 @@ class RobotRetarget:
             viewer = mujoco.viewer.launch_passive(
                 self.model, self.configuration.data, key_callback=key_callback
             )
-            print("Controls: Space play/pause")
+            print("操作提示: 空格键 播放/暂停")
 
         try:
             for frame_idx in tqdm(range(self.num_frames), desc="Retargeting", unit="frame"):
@@ -703,7 +701,7 @@ class RobotRetarget:
             writer.writerows(result_xyzw.tolist())
 
         if self.verbose:
-            print(f"Saved retarget results to: {output_path} (shape={result_xyzw.shape})")
+            print(f"已保存重定向结果到: {output_path} (形状={result_xyzw.shape})")
 
 
 

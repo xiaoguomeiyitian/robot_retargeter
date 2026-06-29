@@ -1648,7 +1648,7 @@ def load_motion_arrays(motion_file: Path) -> tuple[dict[str, np.ndarray], str, f
 		motion["trans"], motion["root_orient"] = _convert_y_up_to_z_up(
 			motion["trans"], motion["root_orient"]
 		)
-		print(f"[load_motion] detected Y-up motion in {motion_file.name}; converted to Z-up.")
+		print(f"[load_motion] 检测到 Y-up 动作 ({motion_file.name})，已转换为 Z-up。")
 
 	if "pose_hand" in data.files:
 		motion["pose_hand"] = np.asarray(data["pose_hand"], dtype=np.float32)
@@ -1671,11 +1671,32 @@ def load_motion_arrays(motion_file: Path) -> tuple[dict[str, np.ndarray], str, f
 
 
 def resolve_model_root(model_path: Path, model_type: str, gender: str) -> tuple[Path, str]:
+	"""Resolve the SMPL-X model root directory.
+
+	Returns (root, ext) where ``root`` is the path to pass to
+	``smplx.create(model_path=str(root))``.
+
+	The ``smplx.create()`` function works as follows:
+	  1. If model_path is a directory: model_path = os.path.join(model_path, model_type)
+	  2. Then looks for: os.path.join(model_path, "SMPLX_<GENDER>.<ext>")
+
+	So if files are at ``asset/smplx/SMPLX_NEUTRAL.npz``, we pass
+	``asset/smplx`` directly (smplx.create will try to go deeper but since
+	it's already there, it just adds ``smplx`` and looks — actually it does
+	``os.path.join(model_path, model_type)`` so passing ``asset/smplx`` would
+	give ``asset/smplx/smplx`` which is wrong).
+
+	Therefore we need to return the *grandparent* when the file is directly
+	in ``model_path``: return ``model_path.parent`` (i.e. ``asset``) so that
+	``smplx.create`` builds ``asset/smplx`` and finds the file.
+	"""
 	if model_path.is_file():
 		suffix = model_path.suffix.lstrip(".")
 		if not suffix:
 			raise ValueError(f"SMPL model file must have a suffix: {model_path}")
-		return model_path, suffix
+		# smplx.create will do os.path.join(parent, model_type) → we need
+		# the grandparent so it lands on the dir containing the file
+		return model_path.parent.parent, suffix
 
 	candidate_dirs = [model_path, model_path / model_type]
 	candidate_exts = ["pkl", "npz"] if model_type == "smpl" else ["npz", "pkl"]
@@ -1686,7 +1707,13 @@ def resolve_model_root(model_path: Path, model_type: str, gender: str) -> tuple[
 		for ext in candidate_exts:
 			candidate = directory / f"{expected_prefix}_{expected_gender}.{ext}"
 			if candidate.exists():
-				return directory, ext
+				# smplx.create will do os.path.join(root, model_type), so
+				# we return the parent of the dir containing model files.
+				# If file is at asset/smplx/SMPLX_NEUTRAL.npz → dir=asset/smplx
+				# → return asset (parent) → smplx.create → asset/smplx → found!
+				# If file is at asset/smplx/smplx/SMPLX_NEUTRAL.npz → dir=asset/smplx/smplx
+				# → return asset/smplx (parent) → smplx.create → asset/smplx/smplx → found!
+				return directory.parent, ext
 
 	searched = ", ".join(str(path) for path in candidate_dirs)
 	raise FileNotFoundError(
@@ -2103,12 +2130,12 @@ def print_summary(
 	selected_frames: np.ndarray,
 ) -> None:
 	duration = positions.shape[0] / fps if fps > 0 else 0.0
-	print(f"motion_file: {motion_file}")
-	print(f"gender: {gender}")
-	print(f"frames_total: {positions.shape[0]}")
-	print(f"frames_selected: {selected_frames.shape[0]}")
-	print(f"fps: {fps:.3f}")
-	print(f"duration_sec: {duration:.3f}")
+	print(f"  动作文件: {motion_file}")
+	print(f"  性别: {gender}")
+	print(f"  总帧数: {positions.shape[0]}")
+	print(f"  选中帧数: {selected_frames.shape[0]}")
+	print(f"  帧率: {fps:.3f} fps")
+	print(f"  时长: {duration:.3f}s")
 
 
 def save_keypoints_pkl(
@@ -2150,7 +2177,7 @@ def save_keypoints_pkl(
 	with output_path.open("wb") as f:
 		pickle.dump(payload, f)
 	
-	print(f"Saved keypoints to: {output_path}")
+	print(f"[信息] 已保存关键点: {output_path}")
 
 
 def advance_frame_cursor(cursor: int, delta: int, num_frames: int, loop: bool) -> int:
@@ -2254,7 +2281,7 @@ def play_clip(
 				contact_states=None if contact_states is None else contact_states[frame_idx],
 			)
 
-	print("Controls: Space play/pause, ',' back 1, '.' forward 1, '[' back 10, ']' forward 10, 'R' reset")
+	print("操作提示: 空格键 播放/暂停, ',' 后退1帧, '.' 前进1帧, '[' 后退10帧, ']' 前进10帧, 'R' 重置")
 	with mujoco.viewer.launch_passive(model, data, key_callback=key_callback) as viewer:
 		last_advance_time = time.perf_counter()
 		last_progress_line = ""
@@ -2436,25 +2463,6 @@ def main() -> None:
 	frame_ids = select_frame_slice(positions.shape[0], args.start_frame, args.end_frame, args.stride)
 	if args.print_summary:
 		print_summary(args.motion_file, positions, fps, gender, frame_ids)
-		print(f"contact_names: {list(contact_links)}")
-		print(f"contact_states_shape: {contact_states.shape}")
-		print(f"contact_height_lpf_alpha: {contact_height_lpf_alpha}")
-		print(f"knee_angle_offset_degrees: {knee_angle_offset_degrees}")
-		print(f"robot_leg_length: {robot_leg_length}")
-		print(f"skeleton_leg_length: {skeleton_leg_length}")
-		print(f"leg_displacement_scale: {leg_displacement_scale}")
-		print(f"keypoints_pkl: {keypoint_output_path}")
-		print(f"robot_mjcf_path: {robot_mjcf_path}")
-		print(f"robot_link_lengths: {robot_link_lengths}")
-		print(f"retarget_keypoints_shape: {retarget_keypoints.shape}")
-		print(f"retarget_keypoint_quaternions_shape: {retarget_keypoint_quaternions.shape}")
-		print(f"contact_height_offsets_shape: {contact_height_offsets.shape}")
-		print(f"skeleton_link_vectors: {skeleton_link_vectors}")
-		print(f"link_scales: {link_scales}")
-		print(f"link_scale_is_static: {link_scale_is_static}")
-
-	if args.no_viewer:
-		return
 
 	mjcf_path = skeleton_mjcf_path
 	if not mjcf_path.exists():
